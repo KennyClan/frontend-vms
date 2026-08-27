@@ -1165,10 +1165,10 @@ function VisitorsPage({ visitors, setVisitors, user, requests = [], apiMode = fa
 }
 
 // ─── VISIT REQUESTS ───────────────────────────────────────────────
-function VisitRequestsPage({ requests, setRequests, user, apiMode = false, refreshRequests = async () => {} }) {
+function VisitRequestsPage({ requests, setRequests, user, apiMode = false, refreshRequests = async () => {}, defaultFilter = "All" }) {
   const [checkinTarget, setCheckinTarget] = useState(null);
   const [badge, setBadge]                 = useState("");
-  const [filterStatus, setFilterStatus]   = useState("All");
+  const [filterStatus, setFilterStatus]   = useState(defaultFilter);
 
   // Approve dialog state
   const [approveTarget, setApproveTarget]         = useState(null);  // request object
@@ -1253,8 +1253,8 @@ function VisitRequestsPage({ requests, setRequests, user, apiMode = false, refre
     <div className="flex flex-col gap-5">
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">{isEmployee ? "My Visit Requests" : "Visit Requests"}</h1>
-          <p className="text-sm text-gray-500">{isEmployee ? "Create visitor passes for people visiting you" : "Approve, reject, check-in and check-out"}</p>
+          <h1 className="text-xl font-bold text-gray-900">{isEmployee ? (defaultFilter === "Checked Out" ? "Visitor History" : "My Visit Requests") : "Visit Requests"}</h1>
+          <p className="text-sm text-gray-500">{isEmployee ? (defaultFilter === "Checked Out" ? "Visitors who have already visited you" : "Create visitor passes for people visiting you") : "Approve, reject, check-in and check-out"}</p>
         </div>
         {isEmployee && <Btn onClick={() => { setSelfVisitError(""); setShowSelfVisit(true); }}>+ Create Visitor Pass</Btn>}
       </div>
@@ -4277,7 +4277,7 @@ function Sidebar({ page, setPage, user, open, onClose }) {
   const adminNav=[{id:"dashboard",label:"Dashboard",icon:"📊"},{id:"visitors",label:"Visitors",icon:"👥"},{id:"requests",label:"Visit Requests",icon:"📋"},{id:"security",label:"Security Desk",icon:"🔒"},{id:"analytics",label:"Analytics",icon:"📈"},{id:"audit",label:"Audit Log",icon:"📜"},{id:"restricted",label:"Restricted Areas",icon:"🔒"},{id:"staff",label:"Staff",icon:"👤"},{id:"departments",label:"Departments",icon:"🏢"},{id:"floorplan",label:"Floor Plan",icon:"🗺️"}];
   const guardNav=[{id:"dashboard",label:"Dashboard",icon:"📊"},{id:"myroom",label:"My Room",icon:"🏠"},{id:"visitors",label:"Visitors",icon:"👥"},{id:"security",label:"Security Desk",icon:"🔒"},{id:"audit",label:"Audit Log",icon:"📜"},{id:"restricted",label:"Restricted Areas",icon:"🔒"},{id:"floorplan",label:"Floor Plan",icon:"🗺️"}];
   const recepNav=[{id:"dashboard",label:"Dashboard",icon:"📊"},{id:"visitors",label:"Visitors",icon:"👥"},{id:"requests",label:"Visit Requests",icon:"📋"},{id:"analytics",label:"Analytics",icon:"📈"},{id:"audit",label:"Audit Log",icon:"📜"},{id:"floorplan",label:"Floor Plan",icon:"🗺️"}];
-  const employeeNav=[{id:"dashboard",label:"Dashboard",icon:"📊"},{id:"requests",label:"My Visit Requests",icon:"📋"}];
+  const employeeNav=[{id:"dashboard",label:"Dashboard",icon:"📊"},{id:"requests",label:"My Visit Requests",icon:"📋"},{id:"visitor-history",label:"Visitor History",icon:"👥"}];
   const nav=user.role==="Administrator"?adminNav:user.role==="Security Guard"?guardNav:user.role==="Employee"?employeeNav:recepNav;
 
   function handleNav(id) { setPage(id); onClose(); }
@@ -4490,6 +4490,9 @@ export default function VistaVMS({ apiMode = false, authUser = null, onSignInWit
           : <AccessDenied />)}
         {page === "floorplan" && (["Administrator","Security Guard","Receptionist"].includes(user.role)
           ? <FloorPlanEditor apiMode={apiMode} user={user} />
+          : <AccessDenied />)}
+        {page === "visitor-history" && (user.role === "Employee"
+          ? <VisitRequestsPage requests={requests} setRequests={setRequests} user={user} apiMode={apiMode} refreshRequests={refreshRequests} defaultFilter="Checked Out" />
           : <AccessDenied />)}
       </main>
     </div>
