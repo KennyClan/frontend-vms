@@ -68,6 +68,22 @@ export const checkInVisitor    = (id, data)     => api.patch(`/visit-requests/${
 export const checkOutVisitor   = (id)           => api.patch(`/visit-requests/${id}/check-out`)
 export const lookupByQR        = (qrRef)        => api.get(`/visit-requests/by-qr/${qrRef}`)
 
+// ── Employee Self-Visit ──────────────────────────────────────────
+export const createSelfVisit = (data) => api.post('/visit-requests/self-visit', data)
+
+// ── Guard: Destination Arrival ───────────────────────────────────
+export const confirmDestinationArrival = (requestId, data) =>
+  api.post(`/visit-requests/${requestId}/destination-arrival`, data)
+
+// ── Notify Host ──────────────────────────────────────────────────
+export const notifyHost = (requestId) => api.post(`/visit-requests/${requestId}/notify-host`)
+
+// ── Room Capacity ────────────────────────────────────────────────
+export const getRoomCapacity = () => api.get('/visit-requests/room-capacity')
+
+// ── Employee List (for dropdown) ─────────────────────────────────
+export const getEmployees = () => api.get('/visit-requests/employees')
+
 // ── Audit & Analytics ─────────────────────────────────────────────
 export const getAuditLog        = (params) => api.get('/audit-log', { params })
 export const getAnalyticsSummary = ()      => api.get('/analytics/summary')
@@ -89,6 +105,13 @@ export const getAreaOccupants      = (areaId)        => api.get(`/restricted-are
 export const getStaff    = ()       => api.get('/staff')
 export const createStaff = (data)   => api.post('/staff', data)
 export const updateStaff = (id, data) => api.patch(`/staff/${id}`, data)
+
+// ── Departments (Admin only) ─────────────────────────────────────
+export const getDepartments       = ()       => api.get('/departments')
+export const createDepartment     = (data)   => api.post('/departments', data)
+export const updateDepartment     = (id, data) => api.patch(`/departments/${id}`, data)
+export const deleteDepartment     = (id)     => api.delete(`/departments/${id}`)
+export const getDepartmentMembers = (id)     => api.get(`/departments/${id}/members`)
 
 // ── Posts / Floor Plan (legacy) ─────────────────────────────────
 export const getPosts       = ()        => api.get('/posts')

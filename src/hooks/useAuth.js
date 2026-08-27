@@ -54,18 +54,12 @@ export function useAuth() {
     }
   }, [])
 
-  // BUG #4 FIX: @simplewebauthn/browser changed its call signature in v11:
-  //   v10 and below: startRegistration(optionsObject)
-  //   v11 and above: startRegistration({ optionsJSON: optionsObject })
-  // The same change applies to startAuthentication.
+  // @simplewebauthn/browser changed its call signature:
+  //   v7 and below: startRegistration(optionsJSON) — plain parameter
+  //   v8 and above: startRegistration({ optionsJSON }) — destructured parameter
   // This helper detects the installed version at runtime and calls the right
   // form, so the code keeps working if the package is upgraded.
   function callSimpleWebAuthn(fn, options) {
-    // v10: startRegistration(optionsJSON)   — plain parameter named optionsJSON
-    // v11: startRegistration({ optionsJSON }) — destructured parameter
-    // The old check (pkg.includes('optionsJSON')) matched BOTH versions because
-    // v10 also names its parameter 'optionsJSON'. The correct way is to check
-    // whether the parameter is destructured with `({`, which only v11+ does.
     const needsWrapper = /^\s*async function \w+\s*\(\s*\{/.test(fn.toString())
     return needsWrapper ? fn({ optionsJSON: options }) : fn(options)
   }
