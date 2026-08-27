@@ -4233,7 +4233,8 @@ function Sidebar({ page, setPage, user, open, onClose }) {
   const adminNav=[{id:"dashboard",label:"Dashboard",icon:"📊"},{id:"visitors",label:"Visitors",icon:"👥"},{id:"requests",label:"Visit Requests",icon:"📋"},{id:"security",label:"Security Desk",icon:"🔒"},{id:"analytics",label:"Analytics",icon:"📈"},{id:"audit",label:"Audit Log",icon:"📜"},{id:"restricted",label:"Restricted Areas",icon:"🔒"},{id:"staff",label:"Staff",icon:"👤"},{id:"departments",label:"Departments",icon:"🏢"},{id:"floorplan",label:"Floor Plan",icon:"🗺️"}];
   const guardNav=[{id:"dashboard",label:"Dashboard",icon:"📊"},{id:"myroom",label:"My Room",icon:"🏠"},{id:"visitors",label:"Visitors",icon:"👥"},{id:"security",label:"Security Desk",icon:"🔒"},{id:"audit",label:"Audit Log",icon:"📜"},{id:"restricted",label:"Restricted Areas",icon:"🔒"},{id:"floorplan",label:"Floor Plan",icon:"🗺️"}];
   const recepNav=[{id:"dashboard",label:"Dashboard",icon:"📊"},{id:"visitors",label:"Visitors",icon:"👥"},{id:"requests",label:"Visit Requests",icon:"📋"},{id:"analytics",label:"Analytics",icon:"📈"},{id:"audit",label:"Audit Log",icon:"📜"},{id:"floorplan",label:"Floor Plan",icon:"🗺️"}];
-  const nav=user.role==="Administrator"?adminNav:user.role==="Security Guard"?guardNav:recepNav;
+  const employeeNav=[{id:"dashboard",label:"Dashboard",icon:"📊"},{id:"requests",label:"My Visit Requests",icon:"📋"}];
+  const nav=user.role==="Administrator"?adminNav:user.role==="Security Guard"?guardNav:user.role==="Employee"?employeeNav:recepNav;
 
   function handleNav(id) { setPage(id); onClose(); }
 
@@ -4415,11 +4416,11 @@ export default function VistaVMS({ apiMode = false, authUser = null, onSignInWit
         {/* URL BYPASS FIX: every page checks the user role before rendering.
              A Security Guard who manually sets page="requests" in React DevTools
              or localStorage will see "Access denied" instead of the page. */}
-        {page === "dashboard" && (user.role === "Receptionist"
+        {page === "dashboard" && (["Receptionist","Employee"].includes(user.role)
           ? <ReceptionistDashboard requests={requests} visitors={visitors} user={user} apiMode={apiMode} refreshRequests={refreshRequests} />
           : <Dashboard requests={requests} visitors={visitors} user={user} />)}
         {page === "visitors" && <VisitorsPage visitors={visitors} setVisitors={setVisitors} requests={requests} user={user} apiMode={apiMode} refreshVisitors={refreshVisitors} />}
-        {page === "requests" && (["Administrator","Receptionist"].includes(user.role)
+        {page === "requests" && (["Administrator","Receptionist","Employee"].includes(user.role)
           ? <VisitRequestsPage requests={requests} setRequests={setRequests} user={user} apiMode={apiMode} refreshRequests={refreshRequests} />
           : <AccessDenied />)}
         {page === "security" && (["Administrator","Security Guard"].includes(user.role)
