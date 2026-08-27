@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
-import { getVisitRequests, createVisitRequest, approveRequest, checkInVisitor, checkOutVisitor, getVisitors, createVisitor, toggleBlockVisitor, getAuditLog, getAnalyticsSummary, getRestrictedAreas, createRestrictedArea, deleteRestrictedArea, grantRestrictedAccess, issueRestrictedBadge, confirmRestrictedEntry, confirmRestrictedExit, getAreaOccupants, getRequestRestrictedAccess, getStaff, createStaff, updateStaff, getPosts, createPost, getPostDetail, updatePost, getFloors, createFloor, updateFloor, deleteFloor, getFloorObjects, createFloorObject, updateFloorObject, deleteFloorObject, duplicateFloorObject, bulkSaveFloorObjects, scanArrival, lookupBadge, getRecentArrivals } from "../services/api";
+import { getVisitRequests, createVisitRequest, approveRequest, checkInVisitor, checkOutVisitor, getVisitors, createVisitor, toggleBlockVisitor, getAuditLog, getAnalyticsSummary, getRestrictedAreas, createRestrictedArea, deleteRestrictedArea, grantRestrictedAccess, issueRestrictedBadge, confirmRestrictedEntry, confirmRestrictedExit, getAreaOccupants, getRequestRestrictedAccess, getStaff, createStaff, updateStaff, getPosts, createPost, getPostDetail, updatePost, getFloors, createFloor, updateFloor, deleteFloor, getFloorObjects, createFloorObject, updateFloorObject, deleteFloorObject, duplicateFloorObject, bulkSaveFloorObjects, scanArrival, lookupBadge, getRecentArrivals, getDepartments, createDepartment, updateDepartment, deleteDepartment, createSelfVisit, confirmDestinationArrival, notifyHost, getRoomCapacity, getEmployees } from "../services/api";
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
@@ -2307,7 +2307,7 @@ function StaffManagement({ apiMode = false }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ name: "", email: "", password: "", role: "Security Guard", post_id: null });
+  const [form, setForm] = useState({ name: "", email: "", password: "", role: "Security Guard", post_id: null, department_id: null });
   const [saving, setSaving] = useState(false);
 
   function loadStaff() {
@@ -2322,9 +2322,11 @@ function StaffManagement({ apiMode = false }) {
   useEffect(() => { loadStaff(); }, [apiMode]);
 
   const [posts, setPosts] = useState([]);
+  const [departments, setDepartments] = useState([]);
   useEffect(() => {
     if (!apiMode) return;
     getPosts().then(r => setPosts(r.data || [])).catch(() => {});
+    getDepartments().then(r => setDepartments(r.data || [])).catch(() => {});
   }, [apiMode]);
 
   async function handleCreate() {
@@ -2333,7 +2335,7 @@ function StaffManagement({ apiMode = false }) {
     try {
       await createStaff(form);
       setShowCreate(false);
-      setForm({ name: "", email: "", password: "", role: "Security Guard", post_id: null });
+      setForm({ name: "", email: "", password: "", role: "Security Guard", post_id: null, department_id: null });
       loadStaff();
     } catch (e) {
       setError(e?.response?.data?.detail || "Failed to create staff.");
@@ -2369,6 +2371,15 @@ function StaffManagement({ apiMode = false }) {
     }
   }
 
+  async function handleDepartmentChange(id, deptId) {
+    try {
+      await updateStaff(id, deptId ? { department_id: deptId } : { clear_department: true });
+      loadStaff();
+    } catch (e) {
+      setError(e?.response?.data?.detail || "Failed to update department.");
+    }
+  }
+
   return (
     <div className="flex flex-col gap-5">
       <div className="flex items-start justify-between flex-wrap gap-3">
@@ -2393,6 +2404,7 @@ function StaffManagement({ apiMode = false }) {
               <tr className="text-left text-xs uppercase text-gray-500 border-b border-gray-200 bg-gray-50">
                 <th className="px-4 py-3">Staff</th>
                 <th className="px-4 py-3">Role</th>
+                <th className="px-4 py-3">Department</th>
                 <th className="px-4 py-3">Post</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Actions</th>
@@ -2413,9 +2425,18 @@ function StaffManagement({ apiMode = false }) {
                   <td className="px-4 py-3">
                     <select value={s.role} onChange={e => handleRoleChange(s.id, e.target.value)}
                       className="text-xs px-2 py-1 rounded-lg border border-gray-200 bg-white">
+                      <option value="Super Admin">Super Admin</option>
                       <option value="Administrator">Administrator</option>
-                      <option value="Security Guard">Security Guard</option>
                       <option value="Receptionist">Receptionist</option>
+                      <option value="Employee">Employee</option>
+                      <option value="Security Guard">Security Guard</option>
+                    </select>
+                  </td>
+                  <td className="px-4 py-3">
+                    <select value={s.department_id || ""} onChange={e => handleDepartmentChange(s.id, e.target.value || null)}
+                      className="text-xs px-2 py-1 rounded-lg border border-gray-200 bg-white max-w-[140px]">
+                      <option value="">Unassigned</option>
+                      {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                     </select>
                   </td>
                   <td className="px-4 py-3">
@@ -2458,9 +2479,19 @@ function StaffManagement({ apiMode = false }) {
           Role
           <select value={form.role} onChange={e => setForm(p => ({...p, role: e.target.value}))}
             className="mt-1 w-full h-9 px-3 rounded-[8px] border border-gray-200 text-sm outline-none">
+            <option value="Super Admin">Super Admin</option>
             <option value="Administrator">Administrator</option>
-            <option value="Security Guard">Security Guard</option>
             <option value="Receptionist">Receptionist</option>
+            <option value="Employee">Employee</option>
+            <option value="Security Guard">Security Guard</option>
+          </select>
+        </label>
+        <label className="block text-xs font-semibold text-gray-600">
+          Department
+          <select value={form.department_id || ""} onChange={e => setForm(p => ({...p, department_id: e.target.value || null}))}
+            className="mt-1 w-full h-9 px-3 rounded-[8px] border border-gray-200 text-sm outline-none">
+            <option value="">No department</option>
+            {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
           </select>
         </label>
         <label className="block text-xs font-semibold text-gray-600">
