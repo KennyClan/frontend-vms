@@ -2507,6 +2507,188 @@ function StaffManagement({ apiMode = false }) {
   );
 }
 
+// ─── DEPARTMENTS MANAGEMENT (Admin only) ────────────────────────
+function DepartmentsManagement({ apiMode = false }) {
+  const [departments, setDepartments] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [showCreate, setShowCreate] = useState(false);
+  const [showEdit, setShowEdit] = useState(null);
+  const [form, setForm] = useState({ name: "", description: "", is_restricted: false, restricted_area_id: null });
+  const [restrictedAreas, setRestrictedAreas] = useState([]);
+  const [saving, setSaving] = useState(false);
+
+  function loadDepartments() {
+    if (!apiMode) return;
+    setLoading(true);
+    getDepartments()
+      .then(r => setDepartments(r.data))
+      .catch(() => setError("Failed to load departments."))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => { loadDepartments(); }, [apiMode]);
+
+  useEffect(() => {
+    if (!apiMode) return;
+    getRestrictedAreas().then(r => setRestrictedAreas(r.data || [])).catch(() => {});
+  }, [apiMode]);
+
+  async function handleCreate() {
+    if (!form.name) return;
+    setSaving(true);
+    try {
+      await createDepartment(form);
+      setShowCreate(false);
+      setForm({ name: "", description: "", is_restricted: false, restricted_area_id: null });
+      loadDepartments();
+    } catch (e) {
+      setError(e?.response?.data?.detail || "Failed to create department.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleUpdate() {
+    if (!showEdit || !form.name) return;
+    setSaving(true);
+    try {
+      await updateDepartment(showEdit.id, form);
+      setShowEdit(null);
+      setForm({ name: "", description: "", is_restricted: false, restricted_area_id: null });
+      loadDepartments();
+    } catch (e) {
+      setError(e?.response?.data?.detail || "Failed to update department.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(dept) {
+    if (!confirm(`Delete department "${dept.name}"? This only works if it has no members.`)) return;
+    try {
+      await deleteDepartment(dept.id);
+      loadDepartments();
+    } catch (e) {
+      setError(e?.response?.data?.detail || "Failed to delete department.");
+    }
+  }
+
+  function openEdit(dept) {
+    setForm({ name: dept.name, description: dept.description || "", is_restricted: dept.is_restricted, restricted_area_id: dept.restricted_area_id || null });
+    setShowEdit(dept);
+  }
+
+  return (
+    <div className="flex flex-col gap-5">
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-gray-900">Departments</h1>
+          <p className="text-sm text-gray-500">Organize staff into departments. Mark restricted departments for badge-controlled access.</p>
+        </div>
+        <Btn onClick={() => { setForm({ name: "", description: "", is_restricted: false, restricted_area_id: null }); setShowCreate(true); }}>+ New Department</Btn>
+      </div>
+
+      {error && <p className="text-sm text-red-500">{error}</p>}
+      {loading && <p className="text-sm text-gray-400 text-center py-8">Loading...</p>}
+
+      {!loading && departments.length === 0 && (
+        <p className="text-sm text-gray-400 text-center py-10">No departments yet. Create one to get started.</p>
+      )}
+
+      {departments.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {departments.map(d => (
+            <div key={d.id} className="bg-white rounded-[12px] border border-gray-200 p-4 flex flex-col gap-3">
+              <div className="flex items-start justify-between">
+                <div>
+                  <h3 className="font-semibold text-gray-900">{d.name}</h3>
+                  {d.description && <p className="text-xs text-gray-500 mt-1">{d.description}</p>}
+                </div>
+                <span className={cls("px-2 py-0.5 rounded-full text-[10px] font-semibold",
+                  d.is_restricted ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700")}>
+                  {d.is_restricted ? "Restricted" : "Public"}
+                </span>
+              </div>
+              {d.is_restricted && d.restricted_area_name && (
+                <div className="bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                  <p className="text-[10px] text-red-500 font-bold uppercase">Linked Area</p>
+                  <p className="text-xs text-red-700 font-medium">{d.restricted_area_name}</p>
+                </div>
+              )}
+              <div className="flex items-center justify-between mt-auto pt-2 border-t border-gray-100">
+                <span className="text-xs text-gray-400">{d.member_count} member{d.member_count !== 1 ? "s" : ""}</span>
+                <div className="flex gap-2">
+                  <Btn size="sm" variant="ghost" onClick={() => openEdit(d)}>Edit</Btn>
+                  <Btn size="sm" variant="danger" onClick={() => handleDelete(d)}>Delete</Btn>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Create Dialog */}
+      <Dialog open={!!showCreate} title="Create Department" onClose={() => setShowCreate(false)}
+        footer={<>
+          <Btn variant="ghost" onClick={() => setShowCreate(false)}>Cancel</Btn>
+          <Btn onClick={handleCreate} disabled={saving || !form.name}>{saving ? "Creating..." : "Create"}</Btn>
+        </>}>
+        <Input label="Department Name" value={form.name} onChange={e => setForm(p => ({...p, name: e.target.value}))} required placeholder="e.g. Finance" />
+        <label className="block text-xs font-semibold text-gray-600">
+          Description (optional)
+          <input type="text" value={form.description} onChange={e => setForm(p => ({...p, description: e.target.value}))}
+            className="mt-1 w-full h-9 px-3 rounded-[8px] border border-gray-200 text-sm outline-none" placeholder="Brief description" />
+        </label>
+        <label className="flex items-center gap-2 mt-2">
+          <input type="checkbox" checked={form.is_restricted} onChange={e => setForm(p => ({...p, is_restricted: e.target.checked, restricted_area_id: e.target.checked ? p.restricted_area_id : null}))}
+            className="rounded" />
+          <span className="text-xs font-semibold text-gray-600">Restricted department (requires badge access)</span>
+        </label>
+        {form.is_restricted && (
+          <label className="block text-xs font-semibold text-gray-600 mt-2">
+            Link to Restricted Area
+            <select value={form.restricted_area_id || ""} onChange={e => setForm(p => ({...p, restricted_area_id: e.target.value || null}))}
+              className="mt-1 w-full h-9 px-3 rounded-[8px] border border-gray-200 text-sm outline-none">
+              <option value="">Select an area...</option>
+              {restrictedAreas.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </label>
+        )}
+      </Dialog>
+
+      {/* Edit Dialog */}
+      <Dialog open={!!showEdit} title={`Edit: ${showEdit?.name || ""}`} onClose={() => setShowEdit(null)}
+        footer={<>
+          <Btn variant="ghost" onClick={() => setShowEdit(null)}>Cancel</Btn>
+          <Btn onClick={handleUpdate} disabled={saving || !form.name}>{saving ? "Saving..." : "Save Changes"}</Btn>
+        </>}>
+        <Input label="Department Name" value={form.name} onChange={e => setForm(p => ({...p, name: e.target.value}))} required />
+        <label className="block text-xs font-semibold text-gray-600">
+          Description
+          <input type="text" value={form.description} onChange={e => setForm(p => ({...p, description: e.target.value}))}
+            className="mt-1 w-full h-9 px-3 rounded-[8px] border border-gray-200 text-sm outline-none" />
+        </label>
+        <label className="flex items-center gap-2 mt-2">
+          <input type="checkbox" checked={form.is_restricted} onChange={e => setForm(p => ({...p, is_restricted: e.target.checked, restricted_area_id: e.target.checked ? p.restricted_area_id : null}))}
+            className="rounded" />
+          <span className="text-xs font-semibold text-gray-600">Restricted department</span>
+        </label>
+        {form.is_restricted && (
+          <label className="block text-xs font-semibold text-gray-600 mt-2">
+            Link to Restricted Area
+            <select value={form.restricted_area_id || ""} onChange={e => setForm(p => ({...p, restricted_area_id: e.target.value || null}))}
+              className="mt-1 w-full h-9 px-3 rounded-[8px] border border-gray-200 text-sm outline-none">
+              <option value="">Select an area...</option>
+              {restrictedAreas.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </label>
+        )}
+      </Dialog>
+    </div>
+  );
+}
+
 // ─── 2D FLOOR PLAN ──────────────────────────────────────────────
 
 // ─── FLOOR PLAN EDITOR ───────────────────────────────────────
@@ -4048,7 +4230,7 @@ function ReceptionistDashboard({ requests, visitors, user, apiMode }) {
 
 // ─── LAYOUT ───────────────────────────────────────────────────────
 function Sidebar({ page, setPage, user, open, onClose }) {
-  const adminNav=[{id:"dashboard",label:"Dashboard",icon:"📊"},{id:"visitors",label:"Visitors",icon:"👥"},{id:"requests",label:"Visit Requests",icon:"📋"},{id:"security",label:"Security Desk",icon:"🔒"},{id:"analytics",label:"Analytics",icon:"📈"},{id:"audit",label:"Audit Log",icon:"📜"},{id:"restricted",label:"Restricted Areas",icon:"🔒"},{id:"staff",label:"Staff",icon:"👤"},{id:"floorplan",label:"Floor Plan",icon:"🗺️"}];
+  const adminNav=[{id:"dashboard",label:"Dashboard",icon:"📊"},{id:"visitors",label:"Visitors",icon:"👥"},{id:"requests",label:"Visit Requests",icon:"📋"},{id:"security",label:"Security Desk",icon:"🔒"},{id:"analytics",label:"Analytics",icon:"📈"},{id:"audit",label:"Audit Log",icon:"📜"},{id:"restricted",label:"Restricted Areas",icon:"🔒"},{id:"staff",label:"Staff",icon:"👤"},{id:"departments",label:"Departments",icon:"🏢"},{id:"floorplan",label:"Floor Plan",icon:"🗺️"}];
   const guardNav=[{id:"dashboard",label:"Dashboard",icon:"📊"},{id:"myroom",label:"My Room",icon:"🏠"},{id:"visitors",label:"Visitors",icon:"👥"},{id:"security",label:"Security Desk",icon:"🔒"},{id:"audit",label:"Audit Log",icon:"📜"},{id:"restricted",label:"Restricted Areas",icon:"🔒"},{id:"floorplan",label:"Floor Plan",icon:"🗺️"}];
   const recepNav=[{id:"dashboard",label:"Dashboard",icon:"📊"},{id:"visitors",label:"Visitors",icon:"👥"},{id:"requests",label:"Visit Requests",icon:"📋"},{id:"analytics",label:"Analytics",icon:"📈"},{id:"audit",label:"Audit Log",icon:"📜"},{id:"floorplan",label:"Floor Plan",icon:"🗺️"}];
   const nav=user.role==="Administrator"?adminNav:user.role==="Security Guard"?guardNav:recepNav;
@@ -4257,6 +4439,9 @@ export default function VistaVMS({ apiMode = false, authUser = null, onSignInWit
           : <AccessDenied />)}
         {page === "staff" && (user.role === "Administrator"
           ? <StaffManagement apiMode={apiMode} />
+          : <AccessDenied />)}
+        {page === "departments" && (user.role === "Administrator"
+          ? <DepartmentsManagement apiMode={apiMode} />
           : <AccessDenied />)}
         {page === "floorplan" && (["Administrator","Security Guard","Receptionist"].includes(user.role)
           ? <FloorPlanEditor apiMode={apiMode} user={user} />
