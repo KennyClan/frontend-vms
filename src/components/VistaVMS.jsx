@@ -1178,8 +1178,15 @@ function VisitRequestsPage({ requests, setRequests, user, apiMode = false, refre
   const [approving, setApproving]                 = useState(false);
   const [approveError, setApproveError]           = useState("");
 
+  // Employee self-visit dialog state
+  const [showSelfVisit, setShowSelfVisit] = useState(false);
+  const [selfVisitForm, setSelfVisitForm] = useState({ visitor_name: "", visitor_email: "", company: "", phone: "", visit_date: "", expected_time: "", purpose: "" });
+  const [savingSelfVisit, setSavingSelfVisit] = useState(false);
+  const [selfVisitError, setSelfVisitError] = useState("");
+
   const canApprove = ["Administrator","Receptionist"].includes(user.role);
   const canCheckIn = ["Administrator","Security Guard"].includes(user.role);
+  const isEmployee = user.role === "Employee";
   const filtered   = requests.filter(r =>
     filterStatus === "All" || r.approval_status === filterStatus || r.status === filterStatus
   );
@@ -1227,11 +1234,29 @@ function VisitRequestsPage({ requests, setRequests, user, apiMode = false, refre
     setCheckinTarget(null); setBadge("");
   }
 
+  async function handleSelfVisit() {
+    if (!selfVisitForm.visitor_name || !selfVisitForm.visit_date || !selfVisitForm.purpose) return;
+    setSavingSelfVisit(true); setSelfVisitError("");
+    try {
+      await createSelfVisit(selfVisitForm);
+      await refreshRequests();
+      setShowSelfVisit(false);
+      setSelfVisitForm({ visitor_name: "", visitor_email: "", company: "", phone: "", visit_date: "", expected_time: "", purpose: "" });
+    } catch (e) {
+      setSelfVisitError(e?.response?.data?.detail || "Failed to create pass.");
+    } finally {
+      setSavingSelfVisit(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-5">
-      <div>
-        <h1 className="text-xl font-bold text-gray-900">Visit Requests</h1>
-        <p className="text-sm text-gray-500">Approve, reject, check-in and check-out</p>
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-xl font-bold text-gray-900">{isEmployee ? "My Visit Requests" : "Visit Requests"}</h1>
+          <p className="text-sm text-gray-500">{isEmployee ? "Create visitor passes for people visiting you" : "Approve, reject, check-in and check-out"}</p>
+        </div>
+        {isEmployee && <Btn onClick={() => { setSelfVisitError(""); setShowSelfVisit(true); }}>+ Create Visitor Pass</Btn>}
       </div>
 
       <div className="flex gap-1.5 flex-wrap">
@@ -1357,6 +1382,25 @@ function VisitRequestsPage({ requests, setRequests, user, apiMode = false, refre
           ⚠️ Verify visitor's government ID first.
         </div>
         <Input label="Badge Number" value={badge} onChange={e => setBadge(e.target.value)} placeholder="e.g. V-1024" required />
+      </Dialog>
+
+      {/* Employee self-visit dialog */}
+      <Dialog open={showSelfVisit} title="Create Visitor Pass" onClose={() => setShowSelfVisit(false)}
+        footer={<>
+          <Btn variant="ghost" onClick={() => setShowSelfVisit(false)}>Cancel</Btn>
+          <Btn onClick={handleSelfVisit} disabled={savingSelfVisit || !selfVisitForm.visitor_name || !selfVisitForm.visit_date || !selfVisitForm.purpose}>
+            {savingSelfVisit ? "Creating..." : "Create Pass"}
+          </Btn>
+        </>}>
+        <p className="text-xs text-gray-500 -mt-1 mb-2">Fill in your visitor's details. The pass will be sent to their email.</p>
+        {selfVisitError && <p className="text-xs text-red-500 mb-2">{selfVisitError}</p>}
+        <Input label="Visitor Name" value={selfVisitForm.visitor_name} onChange={e => setSelfVisitForm(p => ({...p, visitor_name: e.target.value}))} required placeholder="e.g. Juan Dela Cruz" />
+        <Input label="Visitor Email" type="email" value={selfVisitForm.visitor_email} onChange={e => setSelfVisitForm(p => ({...p, visitor_email: e.target.value}))} placeholder="visitor@email.com (for QR pass)" />
+        <Input label="Company" value={selfVisitForm.company} onChange={e => setSelfVisitForm(p => ({...p, company: e.target.value}))} placeholder="Optional" />
+        <Input label="Phone" value={selfVisitForm.phone} onChange={e => setSelfVisitForm(p => ({...p, phone: e.target.value}))} placeholder="Optional" />
+        <Input label="Visit Date" type="date" value={selfVisitForm.visit_date} onChange={e => setSelfVisitForm(p => ({...p, visit_date: e.target.value}))} required />
+        <Input label="Expected Time" type="time" value={selfVisitForm.expected_time} onChange={e => setSelfVisitForm(p => ({...p, expected_time: e.target.value}))} />
+        <Input label="Purpose" value={selfVisitForm.purpose} onChange={e => setSelfVisitForm(p => ({...p, purpose: e.target.value}))} required placeholder="e.g. Team meeting" />
       </Dialog>
     </div>
   );
