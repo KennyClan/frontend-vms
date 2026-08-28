@@ -3214,13 +3214,34 @@ function FloorPlanEditor({ apiMode = false, user }) {
   }
 
   async function handleAddFloor() {
-    const num = floors.length > 0 ? Math.max(...floors.map(f => f.floor_number)) + 1 : 1;
-    const name = `Floor ${num}`;
+    // Re-sync from the backend first — the local `floors` state can be stale
+    // (another session/tab added or deleted floors), which would otherwise
+    // collide with a floor_number that already exists in the DB and surface
+    // as a confusing "floor already exists" error.
+    let list = floors;
     try {
-      const r = await createFloor({ name, floor_number: num });
-      setFloors(prev => [...prev, r.data]);
-      setActiveFloorId(r.data.id);
-    } catch (e) { setError(e?.response?.data?.detail || "Failed to create floor."); }
+      const fresh = await getFloors();
+      if (fresh.data && fresh.data.length > 0) {
+        list = fresh.data;
+        setFloors(list);
+      }
+    } catch (e) { /* fall back to stale local list */ }
+
+    let num = list.length > 0 ? Math.max(...list.map(f => f.floor_number)) + 1 : 1;
+    let r = null;
+    // If a number is taken after all (race/leftover row), just take the next free one.
+    for (let attempt = 0; attempt < 20; attempt++) {
+      try {
+        r = await createFloor({ name: `Floor ${num}`, floor_number: num });
+        break;
+      } catch (e) {
+        if (e?.response?.status === 409) { num++; continue; }
+        throw e;
+      }
+    }
+    if (!r) { setError("Failed to create floor: no free floor number."); return; }
+    setFloors(prev => [...prev, r.data]);
+    setActiveFloorId(r.data.id);
   }
 
   async function handleRenameFloor(floorId, newName) {
