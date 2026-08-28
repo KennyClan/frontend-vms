@@ -38,6 +38,8 @@ function statusColor(s) {
 
 import QRCode from "qrcode";
 
+import { ROLE_MODULE_GUARD, roleNav, hasModule, MODULES, DEFAULT_MODULES_BY_ROLE, effectivePermissions } from "../config/modules";
+
 // ─── QR CODE GENERATOR (real, scannable) ──────────────────────────
 function QRCanvas({ data, size = 160 }) {
   const ref = useRef(null);
@@ -1536,7 +1538,7 @@ function ManualQREntry({ onResult }) {
 }
 
 // ─── SECURITY DESK ────────────────────────────────────────────────
-function SecurityDesk({ requests, setRequests, apiMode = false, refreshRequests = async () => {} }) {
+function SecurityDesk({ requests, setRequests, user = null, apiMode = false, refreshRequests = async () => {} }) {
   const [q, setQ]                         = useState("");
   const [badge, setBadge]                 = useState("");
   const [target, setTarget]               = useState(null);
@@ -1699,7 +1701,14 @@ function SecurityDesk({ requests, setRequests, apiMode = false, refreshRequests 
                 <td className="px-4 py-3 text-gray-500 text-xs">{r.host || r.host_name}</td>
                 <td className="px-4 py-3 text-gray-500 text-xs">{r.visit_date} · {r.expected_time}</td>
                 <td className="px-4 py-3"><Badge status={r.status} /></td>
-                <td className="px-4 py-3 text-xs text-gray-500">{r.badge_number || "—"}</td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-gray-500">{r.badge_number || "—"}</span>
+                    {r.destination_type === "Restricted" && (
+                      <span className="text-[10px] font-semibold text-red-700 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full">🔒 Restricted</span>
+                    )}
+                  </div>
+                </td>
                 <td className="px-4 py-3 flex gap-1">
                   {r.status === "Pending Arrival" && <Btn size="sm" variant="success" onClick={() => openCheckIn(r)}>🔖 Check In</Btn>}
                   {r.status === "Checked In"      && <Btn size="sm" variant="warning" onClick={() => checkOut(r.id)}>Exit</Btn>}
@@ -1739,19 +1748,30 @@ function SecurityDesk({ requests, setRequests, apiMode = false, refreshRequests 
 
             <Input label="Regular Badge Number" value={badge} onChange={e => setBadge(e.target.value)} placeholder="e.g. V-1024" required />
 
-            {/* Restricted area section — only visible to guard if pre-approved by Admin */}
+            {/* Restricted area section — shown when the visitor's request is
+                recognised as a restricted destination (host in a restricted
+                department) and/or a restricted grant already exists */}
             {restrictedInfo && (
               <div className="border border-red-200 bg-red-50 rounded-lg p-3 flex flex-col gap-2">
                 <div className="flex items-center gap-2">
                   <span className="text-base">🔒</span>
                   <div>
-                    <p className="text-xs font-bold text-red-800">Restricted Area Access Approved</p>
+                    <p className="text-xs font-bold text-red-800">
+                      {restrictedInfo.status === "Pending" ? "Restricted Area Visit Detected" : "Restricted Area Access Approved"}
+                    </p>
                     <p className="text-xs text-red-600">
                       Area: <span className="font-semibold">{restrictedInfo.area_name}</span>
                       {restrictedInfo.floor ? ` · ${restrictedInfo.floor}` : ""}
                     </p>
                   </div>
                 </div>
+                {user?.role === "Security Guard" && (
+                  <button
+                    onClick={() => window.__vista_set_page?.("restricted")}
+                    className="text-left text-[11px] font-semibold text-red-700 bg-white border border-red-200 rounded-lg px-2.5 py-1.5 hover:bg-red-100 transition-colors">
+                    → Go to Restricted Areas
+                  </button>
+                )}
                 {restrictedInfo.status === "Pending" && !restrictedResult && (
                   <>
                     <p className="text-[11px] text-red-700">Issue a restricted badge number for this visitor.</p>
@@ -2345,14 +2365,51 @@ function RestrictedAreas({ requests, user, apiMode = false }) {
   );
 }
 
+// ─── MODULE PERMISSIONS PICKER (Admin staff accounts) ─────────────
+function ModulePicker({ value = [], onChange }) {
+  const ids = Object.keys(MODULES).filter(id => id !== "dashboard");
+  function toggle(id) {
+    const next = value.includes(id) ? value.filter(m => m !== id) : [...value, id];
+    onChange(next);
+  }
+  return (
+    <div className="grid grid-cols-2 gap-1.5 mt-1">
+      <label className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-2.5 py-2 text-xs text-gray-500 cursor-not-allowed">
+        <input type="checkbox" disabled checked className="accent-blue-600" />
+        <span className="font-medium">{MODULES.dashboard.icon} {MODULES.dashboard.label}</span>
+        <span className="ml-auto text-[10px]">always on</span>
+      </label>
+      {ids.map(id => {
+        const on = value.includes(id);
+        return (
+          <label key={id} className={cls("flex items-center gap-2 rounded-lg border px-2.5 py-2 text-xs cursor-pointer transition-colors",
+            on ? "border-blue-200 bg-blue-50" : "border-gray-200 bg-white hover:bg-gray-50")}>
+            <input type="checkbox" checked={on} onChange={() => toggle(id)} className="accent-blue-600" />
+            <span className={cls("font-medium", on ? "text-blue-800" : "text-gray-600")}>{MODULES[id].icon} {MODULES[id].label}</span>
+          </label>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── STAFF MANAGEMENT (Admin only) ──────────────────────────────
 function StaffManagement({ apiMode = false }) {
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ name: "", email: "", password: "", role: "Security Guard", post_id: null, department_id: null });
+  const [form, setForm] = useState(() => ({
+    name: "", email: "", password: "", role: "Security Guard", post_id: null, department_id: null,
+    permissions: DEFAULT_MODULES_BY_ROLE["Security Guard"].filter(m => m !== "dashboard"),
+  }));
   const [saving, setSaving] = useState(false);
+
+  // Edit-access dialog state
+  const [editAccess, setEditAccess] = useState(null); // staff record being edited
+  const [editPerms, setEditPerms] = useState([]);
+  const [savingPerms, setSavingPerms] = useState(false);
+  const [permError, setPermError] = useState("");
 
   function loadStaff() {
     if (!apiMode) return;
@@ -2377,9 +2434,12 @@ function StaffManagement({ apiMode = false }) {
     if (!form.name || !form.email || !form.password) return;
     setSaving(true);
     try {
-      await createStaff(form);
+      const payload = { ...form };
+      payload.permissions = ["dashboard", ...(form.permissions || [])];
+      await createStaff(payload);
       setShowCreate(false);
-      setForm({ name: "", email: "", password: "", role: "Security Guard", post_id: null, department_id: null });
+      setForm({ name: "", email: "", password: "", role: "Security Guard", post_id: null, department_id: null,
+        permissions: DEFAULT_MODULES_BY_ROLE["Security Guard"].filter(m => m !== "dashboard") });
       loadStaff();
     } catch (e) {
       setError(e?.response?.data?.detail || "Failed to create staff.");
@@ -2424,6 +2484,20 @@ function StaffManagement({ apiMode = false }) {
     }
   }
 
+  async function handleSaveAccess() {
+    if (!editAccess) return;
+    setSavingPerms(true); setPermError("");
+    try {
+      await updateStaff(editAccess.id, { permissions: ["dashboard", ...editPerms] });
+      setEditAccess(null);
+      loadStaff();
+    } catch (e) {
+      setPermError(e?.response?.data?.detail || "Failed to update access.");
+    } finally {
+      setSavingPerms(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-5">
       <div className="flex items-start justify-between flex-wrap gap-3">
@@ -2448,6 +2522,7 @@ function StaffManagement({ apiMode = false }) {
               <tr className="text-left text-xs uppercase text-gray-500 border-b border-gray-200 bg-gray-50">
                 <th className="px-4 py-3">Staff</th>
                 <th className="px-4 py-3">Role</th>
+                <th className="px-4 py-3">Access</th>
                 <th className="px-4 py-3">Department</th>
                 <th className="px-4 py-3">Post</th>
                 <th className="px-4 py-3">Status</th>
@@ -2475,6 +2550,20 @@ function StaffManagement({ apiMode = false }) {
                       <option value="Employee">Employee</option>
                       <option value="Security Guard">Security Guard</option>
                     </select>
+                  </td>
+                  <td className="px-4 py-3">
+                    {s.role === "Super Admin" ? (
+                      <span className="text-[11px] font-semibold text-rose-700 bg-rose-50 px-2 py-1 rounded-full">All modules</span>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-600">{effectivePermissions(s).length} modules</span>
+                        <Btn size="sm" variant="ghost" onClick={() => {
+                          setEditAccess(s);
+                          setEditPerms(effectivePermissions(s).filter(m => m !== "dashboard"));
+                          setPermError("");
+                        }}>✏️ Edit</Btn>
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <select value={s.department_id || ""} onChange={e => handleDepartmentChange(s.id, e.target.value || null)}
@@ -2521,7 +2610,10 @@ function StaffManagement({ apiMode = false }) {
         <Input label="Password" type="password" value={form.password} onChange={e => setForm(p => ({...p, password: e.target.value}))} required placeholder="Min 8 characters" />
         <label className="block text-xs font-semibold text-gray-600">
           Role
-          <select value={form.role} onChange={e => setForm(p => ({...p, role: e.target.value}))}
+          <select value={form.role} onChange={e => {
+            const role = e.target.value;
+            setForm(p => ({ ...p, role, permissions: DEFAULT_MODULES_BY_ROLE[role]?.filter(m => m !== "dashboard") || [] }));
+          }}
             className="mt-1 w-full h-9 px-3 rounded-[8px] border border-gray-200 text-sm outline-none">
             <option value="Super Admin">Super Admin</option>
             <option value="Administrator">Administrator</option>
@@ -2530,6 +2622,12 @@ function StaffManagement({ apiMode = false }) {
             <option value="Security Guard">Security Guard</option>
           </select>
         </label>
+        {form.role !== "Super Admin" && (
+          <div>
+            <p className="text-xs font-semibold text-gray-600">Module Access <span className="text-gray-400 font-normal">(checked = visible in this account's sidebar)</span></p>
+            <ModulePicker value={form.permissions} onChange={perms => setForm(p => ({ ...p, permissions: perms }))} />
+          </div>
+        )}
         <label className="block text-xs font-semibold text-gray-600">
           Department
           <select value={form.department_id || ""} onChange={e => setForm(p => ({...p, department_id: e.target.value || null}))}
@@ -2546,6 +2644,24 @@ function StaffManagement({ apiMode = false }) {
             {posts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </label>
+      </Dialog>
+
+      {/* Edit module access dialog */}
+      <Dialog open={!!editAccess} title={editAccess ? `Module Access — ${editAccess.name}` : ""} onClose={() => setEditAccess(null)}
+        footer={<>
+          <Btn variant="ghost" onClick={() => setEditAccess(null)}>Cancel</Btn>
+          <Btn onClick={handleSaveAccess} disabled={savingPerms}>Save Access</Btn>
+        </>}>
+        {editAccess && (
+          <div className="flex flex-col gap-3">
+            <p className="text-xs text-gray-500">
+              Choose which modules appear in this account's sidebar. The backend enforces the same list with 403 responses.
+              Changing the <span className="font-semibold">role</span> in the table above resets access to the role's defaults.
+            </p>
+            <ModulePicker value={editPerms} onChange={setEditPerms} />
+            {permError && <p className="text-xs text-red-500">{permError}</p>}
+          </div>
+        )}
       </Dialog>
     </div>
   );
@@ -4274,11 +4390,7 @@ function ReceptionistDashboard({ requests, visitors, user, apiMode }) {
 
 // ─── LAYOUT ───────────────────────────────────────────────────────
 function Sidebar({ page, setPage, user, open, onClose }) {
-  const adminNav=[{id:"dashboard",label:"Dashboard",icon:"📊"},{id:"visitors",label:"Visitors",icon:"👥"},{id:"requests",label:"Visit Requests",icon:"📋"},{id:"security",label:"Security Desk",icon:"🔒"},{id:"analytics",label:"Analytics",icon:"📈"},{id:"audit",label:"Audit Log",icon:"📜"},{id:"restricted",label:"Restricted Areas",icon:"🔒"},{id:"staff",label:"Staff",icon:"👤"},{id:"departments",label:"Departments",icon:"🏢"},{id:"floorplan",label:"Floor Plan",icon:"🗺️"}];
-  const guardNav=[{id:"dashboard",label:"Dashboard",icon:"📊"},{id:"myroom",label:"My Room",icon:"🏠"},{id:"visitors",label:"Visitors",icon:"👥"},{id:"security",label:"Security Desk",icon:"🔒"},{id:"audit",label:"Audit Log",icon:"📜"},{id:"restricted",label:"Restricted Areas",icon:"🔒"},{id:"floorplan",label:"Floor Plan",icon:"🗺️"}];
-  const recepNav=[{id:"dashboard",label:"Dashboard",icon:"📊"},{id:"visitors",label:"Visitors",icon:"👥"},{id:"requests",label:"Visit Requests",icon:"📋"},{id:"analytics",label:"Analytics",icon:"📈"},{id:"audit",label:"Audit Log",icon:"📜"},{id:"floorplan",label:"Floor Plan",icon:"🗺️"}];
-  const employeeNav=[{id:"dashboard",label:"Dashboard",icon:"📊"},{id:"requests",label:"My Visit Requests",icon:"📋"},{id:"visitor-history",label:"Visitor History",icon:"👥"}];
-  const nav=user.role==="Administrator"?adminNav:user.role==="Security Guard"?guardNav:user.role==="Employee"?employeeNav:recepNav;
+  const nav = roleNav(user);
 
   function handleNav(id) { setPage(id); onClose(); }
 
@@ -4327,7 +4439,7 @@ function Sidebar({ page, setPage, user, open, onClose }) {
 }
 
 function Topbar({ user, onLogout, onMenuOpen }) {
-  const roleColors={Administrator:"bg-purple-600","Security Guard":"bg-emerald-600",Receptionist:"bg-blue-600"};
+  const roleColors={Administrator:"bg-purple-600","Super Admin":"bg-rose-600","Security Guard":"bg-emerald-600",Receptionist:"bg-blue-600",Employee:"bg-slate-600"};
   return (
     <header className="fixed top-0 left-0 lg:left-60 right-0 h-14 bg-white border-b border-gray-200 flex items-center gap-3 px-4 z-[50]">
       {/* Hamburger — mobile only */}
@@ -4457,41 +4569,43 @@ export default function VistaVMS({ apiMode = false, authUser = null, onSignInWit
       <Sidebar page={page} setPage={setPage} user={user} open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
       <Topbar user={user} onLogout={handleLogout} onMenuOpen={() => setSidebarOpen(true)} />
       <main className="lg:ml-60 mt-14 min-h-[calc(100vh-3.5rem)] p-4 lg:p-6">
-        {/* URL BYPASS FIX: every page checks the user role before rendering.
-             A Security Guard who manually sets page="requests" in React DevTools
-             or localStorage will see "Access denied" instead of the page. */}
+        {/* URL BYPASS FIX: every page checks the user role AND module
+             permission before rendering. Anyone who forces a page they
+             aren't assigned (DevTools, localStorage) gets "Access denied". */}
         {page === "dashboard" && (["Receptionist","Employee"].includes(user.role)
           ? <ReceptionistDashboard requests={requests} visitors={visitors} user={user} apiMode={apiMode} refreshRequests={refreshRequests} />
           : <Dashboard requests={requests} visitors={visitors} user={user} />)}
-        {page === "visitors" && <VisitorsPage visitors={visitors} setVisitors={setVisitors} requests={requests} user={user} apiMode={apiMode} refreshVisitors={refreshVisitors} />}
-        {page === "requests" && (["Administrator","Receptionist","Employee"].includes(user.role)
+        {page === "visitors" && (ROLE_MODULE_GUARD(user, "visitors")
+          ? <VisitorsPage visitors={visitors} setVisitors={setVisitors} requests={requests} user={user} apiMode={apiMode} refreshVisitors={refreshVisitors} />
+          : <AccessDenied />)}
+        {page === "requests" && (ROLE_MODULE_GUARD(user, "requests")
           ? <VisitRequestsPage requests={requests} setRequests={setRequests} user={user} apiMode={apiMode} refreshRequests={refreshRequests} />
           : <AccessDenied />)}
-        {page === "security" && (["Administrator","Security Guard"].includes(user.role)
-          ? <SecurityDesk requests={requests} setRequests={setRequests} apiMode={apiMode} refreshRequests={refreshRequests} />
+        {page === "security" && (ROLE_MODULE_GUARD(user, "security")
+          ? <SecurityDesk requests={requests} setRequests={setRequests} user={user} apiMode={apiMode} refreshRequests={refreshRequests} />
           : <AccessDenied />)}
-        {page === "myroom" && (user.role === "Security Guard"
+        {page === "myroom" && (ROLE_MODULE_GUARD(user, "myroom")
           ? <RoomGuard apiMode={apiMode} user={user} />
           : <AccessDenied />)}
-        {page === "analytics" && (["Administrator","Receptionist"].includes(user.role)
+        {page === "analytics" && (ROLE_MODULE_GUARD(user, "analytics")
           ? <Analytics requests={requests} visitors={visitors} user={user} apiMode={apiMode} />
           : <AccessDenied />)}
-        {page === "audit" && (["Administrator"].includes(user.role)
+        {page === "audit" && (ROLE_MODULE_GUARD(user, "audit")
           ? <AuditLog apiMode={apiMode} />
           : <AccessDenied />)}
-        {page === "restricted" && (["Administrator","Security Guard"].includes(user.role)
+        {page === "restricted" && (ROLE_MODULE_GUARD(user, "restricted")
           ? <RestrictedAreas requests={requests} user={user} apiMode={apiMode} />
           : <AccessDenied />)}
-        {page === "staff" && (user.role === "Administrator"
+        {page === "staff" && (ROLE_MODULE_GUARD(user, "staff")
           ? <StaffManagement apiMode={apiMode} />
           : <AccessDenied />)}
-        {page === "departments" && (user.role === "Administrator"
+        {page === "departments" && (ROLE_MODULE_GUARD(user, "departments")
           ? <DepartmentsManagement apiMode={apiMode} />
           : <AccessDenied />)}
-        {page === "floorplan" && (["Administrator","Security Guard","Receptionist"].includes(user.role)
+        {page === "floorplan" && (ROLE_MODULE_GUARD(user, "floorplan")
           ? <FloorPlanEditor apiMode={apiMode} user={user} />
           : <AccessDenied />)}
-        {page === "visitor-history" && (user.role === "Employee"
+        {page === "visitor-history" && (ROLE_MODULE_GUARD(user, "visitor-history")
           ? <VisitRequestsPage requests={requests} setRequests={setRequests} user={user} apiMode={apiMode} refreshRequests={refreshRequests} defaultFilter="Checked Out" />
           : <AccessDenied />)}
       </main>

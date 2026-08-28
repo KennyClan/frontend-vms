@@ -30,12 +30,21 @@ export function useAuth() {
     // Probe a protected endpoint. If the token is expired, tampered, or
     // the account was disabled, the backend returns 401 and our axios
     // interceptor in api.js clears localStorage and reloads — so the user
-    // lands back on the login screen automatically.
-    api.get('/auth/me').catch(() => {
-      localStorage.removeItem('vms_token')
-      localStorage.removeItem('vms_user')
-      setUser(null)
-    })
+    // lands back on the login screen automatically. On success the returned
+    // profile (which now includes effective module permissions) is stored so
+    // nav/module access reflects the latest configuration.
+    api.get('/auth/me')
+      .then((res) => {
+        if (res.data && res.data.id) {
+          localStorage.setItem('vms_user', JSON.stringify(res.data))
+          setUser(res.data)
+        }
+      })
+      .catch(() => {
+        localStorage.removeItem('vms_token')
+        localStorage.removeItem('vms_user')
+        setUser(null)
+      })
   }, [])
 
   // Step 1: email + password. Returns a status object the UI branches on —
