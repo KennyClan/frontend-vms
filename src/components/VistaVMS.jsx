@@ -232,10 +232,6 @@ function StaffLogin({ onSignInWithPassword, onEnrollBiometric, onVerifyBiometric
   //       'enroll'    -> first-time device, offer to set up biometrics
   const [step, setStep] = useState("password");
   const [preAuthToken, setPreAuthToken] = useState(null);
-  // reEnroll=true when the stored biometric went stale ("Invalid credential"
-  // / "Unrecognized device") — the enroll screen becomes a re-registration
-  // prompt that replaces the old credential instead of adding a duplicate.
-  const [reEnroll, setReEnroll] = useState(false);
 
   function friendlyError(err) {
     // Log the real error so it's visible in the browser/Eruda console —
@@ -275,17 +271,8 @@ function StaffLogin({ onSignInWithPassword, onEnrollBiometric, onVerifyBiometric
       const realUser = await onVerifyBiometric(token);
       onSuccess(realUser);
     } catch (err) {
-      const friendly = friendlyError(err);
-      if (err?.reEnrollable && token) {
-        // Password is right but this device can't be verified — offer to
-        // re-register the biometric instead of a dead end.
-        setReEnroll(true);
-        setStep("enroll");
-        setError(`${friendly} Re-register this device's biometric to continue.`);
-      } else {
-        setError(friendly);
-        setStep("password");
-      }
+      setError(friendlyError(err));
+      setStep("password");
     } finally {
       setLoading(false);
     }
@@ -294,10 +281,9 @@ function StaffLogin({ onSignInWithPassword, onEnrollBiometric, onVerifyBiometric
   async function handleEnroll() {
     setLoading(true); setError("");
     try {
-      await onEnrollBiometric(preAuthToken, `${email} — device`, reEnroll);
+      await onEnrollBiometric(preAuthToken, `${email} — device`);
       // Enrolled — immediately proceed to verify with the credential just created.
       setStep("biometric");
-      setReEnroll(false);
       await runBiometricVerify(preAuthToken);
     } catch (err) {
       setError(friendlyError(err));
@@ -321,14 +307,12 @@ function StaffLogin({ onSignInWithPassword, onEnrollBiometric, onVerifyBiometric
           <h2 className="text-xl font-bold text-white">
             {step === "password" && "Staff Sign In"}
             {step === "biometric" && "Confirm on Your Phone"}
-            {step === "enroll" && (reEnroll ? "Re-register Biometric" : "Set Up Biometric Login")}
+            {step === "enroll" && "Set Up Biometric Login"}
           </h2>
           <p className="text-slate-400 text-sm">
             {step === "password" && "Access your role-based dashboard"}
             {step === "biometric" && "Approve with Face ID or fingerprint to continue"}
-            {step === "enroll" && (reEnroll
-              ? "Your device couldn't be verified. Register it again to regain access."
-              : "This account needs a device registered before it can sign in")}
+            {step === "enroll" && "This account needs a device registered before it can sign in"}
           </p>
         </div>
 
@@ -390,25 +374,14 @@ function StaffLogin({ onSignInWithPassword, onEnrollBiometric, onVerifyBiometric
           {step === "enroll" && (
             <div className="flex flex-col items-center gap-4 py-2">
               <p className="text-slate-300 text-sm text-center">
-                {reEnroll ? (
-                  <>The stored biometric for <span className="font-semibold">{email}</span> is no longer valid.
-                    Registering again will replace it and let you sign in on this device.</>
-                ) : (
-                  <>No device is registered for <span className="font-semibold">{email}</span> yet.
-                    Register this device now — for cross-device sign-in later, do this on your own phone.</>
-                )}
+                No device is registered for <span className="font-semibold">{email}</span> yet.
+                Register this device now — for cross-device sign-in later, do this on your own phone.
               </p>
               <button onClick={handleEnroll} disabled={loading}
                 className="w-full h-10 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white font-semibold rounded-lg text-sm transition-all">
-                {loading ? "Setting up…" : reEnroll ? "Re-register this device" : "Enable Face ID / Fingerprint"}
+                {loading ? "Setting up…" : "Enable Face ID / Fingerprint"}
               </button>
-              {reEnroll && (
-                <button onClick={() => { setReEnroll(false); setError(""); setStep("biometric"); runBiometricVerify(preAuthToken); }}
-                  className="text-slate-400 hover:text-white text-xs underline">
-                  Try verifying again
-                </button>
-              )}
-              <button onClick={() => { setReEnroll(false); setStep("password"); setLoading(false); }} className="text-slate-500 hover:text-white text-xs underline">
+              <button onClick={() => { setStep("password"); setLoading(false); }} className="text-slate-500 hover:text-white text-xs underline">
                 Cancel
               </button>
             </div>
