@@ -73,28 +73,38 @@ export function useAuth() {
     return needsWrapper ? fn({ optionsJSON: options }) : fn(options)
   }
 
-  // Step 2a: first-time enrollment. Triggers the native Face ID/fingerprint
-  // prompt via the browser's WebAuthn API, then stores the resulting public
-  // key on the backend. Does not log the user in — call verifyBiometric
-  // right after, or simply prompt them to sign in again.
-  const enrollBiometric = useCallback(async (preAuthToken, nickname) => {
-    const { data } = await webauthnRegisterOptions(preAuthToken)
+  // Step 2a: first-time enrollment, or re-registration when the old
+  // credential went stale ("Invalid credential"/"Unrecognized device").
+  // replace=true tells the backend to skip the authenticator exclusion list
+  // and wipe the user's old credential rows once the new one is created.
+  const enrollBiometric = useCallback(async (preAuthToken, nickname, replace = false) => {
+    const { data } = await webauthnRegisterOptions(preAuthToken, replace)
     const parsedOptions = JSON.parse(data.options)
     const attResp = await callSimpleWebAuthn(startRegistration, parsedOptions)
-    await webauthnRegisterVerify(preAuthToken, attResp, nickname)
+    await webauthnRegisterVerify(preAuthToken, attResp, nickname, replace)
   }, [])
 
   // Step 2b: biometric confirmation on an already-enrolled device. This is
-  // what finally issues a real session token.
+  // what finally issues a real session token. When the backend can't match
+  // the device (stale/orphaned credential), we tag the error with
+  // reEnrollable so the login UI can offer a "re-register" prompt instead of
+  // a dead end.
   const verifyBiometric = useCallback(async (preAuthToken) => {
-    const { data: optionsRes } = await webauthnLoginOptions(preAuthToken)
-    const parsedOptions = JSON.parse(optionsRes.options)
-    const authResp = await callSimpleWebAuthn(startAuthentication, parsedOptions)
-    const { data } = await webauthnLoginVerify(preAuthToken, authResp)
-    localStorage.setItem('vms_token', data.access_token)
-    localStorage.setItem('vms_user', JSON.stringify(data.user))
-    setUser(data.user)
-    return data.user
+    try {
+      const { data: optionsRes } = await webauthnLoginOptions(preAuthToken)
+      const parsedOptions = JSON.parse(optionsRes.options)
+      const authResp = await callSimpleWebAuthn(startAuthentication, parsedOptions)
+      const { data } = await webauthnLoginVerify(preAuthToken, authResp)
+      localStorage.setItem('vms_token', data.access_token)
+      localStorage.setItem('vms_user', JSON.stringify(data.user))
+      setUser(data.user)
+      return data.user
+    } catch (err) {
+      if (err?.response?.status === 401 || err?.response?.status === 428) {
+        err.reEnrollable = true
+      }
+      throw err
+    }
   }, [])
 
   const signOut = useCallback(async () => {

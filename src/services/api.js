@@ -42,10 +42,10 @@ export const logout = () => api.post('/auth/logout')
 
 // ── WebAuthn (Face ID / fingerprint) ─────────────────────────────
 // Step 2a: first-time device enrollment (uses the same pre_auth_token).
-export const webauthnRegisterOptions = (preAuthToken) =>
-  api.post('/auth/webauthn/register/options', { pre_auth_token: preAuthToken })
-export const webauthnRegisterVerify = (preAuthToken, credential, nickname) =>
-  api.post('/auth/webauthn/register/verify', { pre_auth_token: preAuthToken, credential, nickname })
+export const webauthnRegisterOptions = (preAuthToken, replace = false) =>
+  api.post('/auth/webauthn/register/options', { pre_auth_token: preAuthToken, replace })
+export const webauthnRegisterVerify = (preAuthToken, credential, nickname, replace = false) =>
+  api.post('/auth/webauthn/register/verify', { pre_auth_token: preAuthToken, credential, nickname, replace })
 
 // Step 2b: biometric confirmation on an already-enrolled device. Verify
 // returns the same { access_token, user } shape the old /auth/login used to.
