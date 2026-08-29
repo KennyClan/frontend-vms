@@ -14,11 +14,15 @@
  *
  * When the backend is unreachable the app falls back to local seed data
  * so the UI remains usable during development without a running DB.
+ *
+ * Public route: /wayfind/:qrRef renders the visitor directions page with
+ * NO auth — it's the link visitors get in their check-in email.
  */
 
 import { useEffect, useState } from 'react'
 import { useAuth } from './hooks/useAuth'
 import VistaVMS from './components/VistaVMS'
+import Wayfinding from './components/Wayfinding'
 
 export default function App() {
   const { user, signInWithPassword, enrollBiometric, verifyBiometric, signOut } = useAuth()
@@ -30,6 +34,11 @@ export default function App() {
       .then(r => setApiHealthy(r.ok))
       .catch(() => setApiHealthy(false))
   }, [])
+
+  const wayfindMatch = window.location.pathname.match(/^\/wayfind\/([^/]+)$/)
+  if (wayfindMatch) {
+    return <Wayfinding qrRef={decodeURIComponent(wayfindMatch[1])} />
+  }
 
   return (
     <VistaVMS
