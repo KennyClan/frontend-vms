@@ -4219,12 +4219,28 @@ function RoomGuard({ apiMode, user }) {
 }
 
 // ─── RECEPTIONIST DASHBOARD ──────────────────────────────────
+// Local calendar date (YYYY-MM-DD). Using toISOString() here was buggy:
+// it returns the UTC date, which lags a day behind the Philippines'
+// local date between midnight and ~8 AM — making "today" visits vanish
+// from the dashboard they were created for.
+function localDateISO(d = new Date()) {
+  const y = String(d.getFullYear());
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 function ReceptionistDashboard({ requests, visitors, user, apiMode }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = localDateISO();
   const todayRequests = requests.filter(r => r.visit_date === today);
   const pending = requests.filter(r => r.approval_status === "Pending");
   const checkedIn = requests.filter(r => r.status === "Checked In");
   const checkedOutToday = requests.filter(r => r.status === "Checked Out" && r.visit_date === today);
+  // Future-dated visits (never invisible): anything after today that isn't
+  // complete/rejected yet, sorted soonest first.
+  const upcoming = requests
+    .filter(r => r.visit_date > today && r.approval_status !== "Rejected" && r.status !== "Checked Out")
+    .sort((a, b) => a.visit_date.localeCompare(b.visit_date));
 
   const [approving, setApproving] = useState(null);
   const [rejecting, setRejecting] = useState(null);
@@ -4368,6 +4384,33 @@ function ReceptionistDashboard({ requests, visitors, user, apiMode }) {
           </div>
         )}
       </div>
+
+      {/* Upcoming Visitors (future dates) */}
+      {upcoming.length > 0 && (
+        <div className="bg-white rounded-[12px] border border-gray-200 p-5">
+          <h3 className="font-bold text-sm text-gray-900 mb-3">📅 Upcoming Visitors ({upcoming.length})</h3>
+          <div className="flex flex-col gap-1.5">
+            {upcoming.map(req => (
+              <div key={req.id} className="flex items-center gap-3 py-2.5 px-3 rounded-lg border border-gray-100">
+                <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-600 font-bold text-xs flex items-center justify-center">
+                  {req.visitor_name.charAt(0)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 truncate">{req.visitor_name}</p>
+                  <p className="text-xs text-gray-500">
+                    {req.host_name} · {req.purpose}
+                    {req.expected_time && ` · ETA ${req.expected_time}`}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-gray-400">Upcoming</span>
+                  <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">{req.visit_date}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Currently Inside */}
       {checkedIn.length > 0 && (
