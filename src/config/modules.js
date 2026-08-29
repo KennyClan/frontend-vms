@@ -6,7 +6,7 @@
 
 export const MODULES = {
   dashboard:        { label: "Dashboard", icon: "📊" },
-  visitors:         { label: "Visitors", icon: "👥" },
+  visitors:         { label: "Visitor History", icon: "👥" },
   requests:         { label: "Visit Requests", icon: "📋" },
   security:         { label: "Security Desk", icon: "🔒" },
   myroom:           { label: "My Room", icon: "🏠" },

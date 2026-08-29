@@ -1060,7 +1060,7 @@ function VisitorsPage({ visitors, setVisitors, user, requests = [], apiMode = fa
     <div className="flex flex-col gap-5">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Visitors</h1>
+          <h1 className="text-xl font-bold text-gray-900">Visitor History</h1>
           <p className="text-sm text-gray-500">All registered visitors — click a row to view details</p>
         </div>
         {canAdd && <Btn onClick={() => setOpen(true)}>+ New Visitor</Btn>}
@@ -4444,7 +4444,7 @@ function ReceptionistDashboard({ requests, visitors, user, apiMode }) {
           onClick={() => window.__vista_set_page?.("visitors")}
           className="bg-white rounded-[12px] border border-gray-200 p-5 text-left hover:border-blue-300 hover:shadow-sm transition-all group">
           <p className="text-2xl mb-2">👥</p>
-          <p className="text-sm font-bold text-gray-900 group-hover:text-blue-600 transition-colors">Visitor Directory</p>
+          <p className="text-sm font-bold text-gray-900 group-hover:text-blue-600 transition-colors">Visitor History</p>
           <p className="text-xs text-gray-400">Browse and register visitors</p>
         </button>
       </div>
