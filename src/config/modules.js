@@ -37,8 +37,8 @@ export const DEFAULT_MODULES_BY_ROLE = {
     "dashboard", "visitors", "requests", "security",
     "analytics", "audit", "restricted", "staff", "departments", "floorplan", "badges",
   ],
-  "Receptionist": ["dashboard", "visitors", "requests", "analytics", "audit", "floorplan", "badges"],
-  "Security Guard": ["dashboard", "myroom", "visitors", "security", "restricted"],
+  "Receptionist": ["dashboard", "visitors", "requests", "security", "analytics", "audit", "floorplan", "badges"],
+  "Security Guard": ["dashboard", "myroom"],
   "Employee": ["dashboard", "requests", "visitor-history"],
 };
 
@@ -73,6 +73,11 @@ export function effectivePermissions(user) {
   if (["Administrator", "Super Admin", "Receptionist"].includes(user.role) && !out.includes("badges")) {
     out.push("badges");
   }
+  // Same role-scoped rule for the Security Desk (front desk) — always show
+  // it for front-desk staff even if their stored list predates the module.
+  if (["Administrator", "Super Admin", "Receptionist"].includes(user.role) && !out.includes("security")) {
+    out.push("security");
+  }
   return out;
 }
 
@@ -89,13 +94,13 @@ export function ROLE_MODULE_GUARD(user, pageId) {
     case "visitors": case "requests": case "analytics":
       return hasModule(user, pageId) && ["Administrator", "Super Admin", "Receptionist", "Employee"].includes(role);
     case "security":
-      return hasModule(user, "security") && ["Administrator", "Super Admin", "Security Guard"].includes(role);
+      return hasModule(user, "security") && ["Administrator", "Super Admin", "Receptionist"].includes(role);
     case "myroom":
       return hasModule(user, "myroom") && ["Security Guard", "Super Admin"].includes(role);
     case "audit":
       return hasModule(user, "audit") && ["Administrator", "Super Admin", "Receptionist"].includes(role);
     case "restricted":
-      return hasModule(user, "restricted") && ["Administrator", "Super Admin", "Security Guard"].includes(role);
+      return hasModule(user, "restricted") && ["Administrator", "Super Admin", "Receptionist"].includes(role);
     case "staff":
       return hasModule(user, "staff") && ["Administrator", "Super Admin"].includes(role);
     case "departments":
@@ -119,6 +124,6 @@ export function roleNav(user) {
   const perms = effectivePermissions(user);
   const labels = NAV_LABELS_BY_ROLE[user.role] || {};
   return MODULE_ORDER
-    .filter(id => perms.includes(id))
+    .filter(id => perms.includes(id) && ROLE_MODULE_GUARD(user, id))
     .map(id => ({ id, label: labels[id] || MODULES[id].label, icon: MODULES[id].icon }));
 }

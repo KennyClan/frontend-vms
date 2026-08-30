@@ -1206,7 +1206,7 @@ function VisitRequestsPage({ requests, setRequests, user, apiMode = false, refre
   // no approve/reject controls per the access spec.
   const canApprove  = isEmployee;
   const canReject   = isEmployee || isReception;
-  const canCheckIn  = ["Administrator","Super Admin","Security Guard"].includes(user.role);
+  const canCheckIn  = ["Administrator","Super Admin","Receptionist"].includes(user.role);
   const filtered   = requests.filter(r =>
     filterStatus === "All" || r.approval_status === filterStatus || r.status === filterStatus
   );
@@ -1886,7 +1886,7 @@ function SecurityDesk({ requests, setRequests, user = null, apiMode = false, ref
                     </p>
                   </div>
                 </div>
-                {user?.role === "Security Guard" && (
+                {["Receptionist", "Security Guard"].includes(user?.role) && (
                   <button
                     onClick={() => window.__vista_set_page?.("restricted")}
                     className="text-left text-[11px] font-semibold text-red-700 bg-white border border-red-200 rounded-lg px-2.5 py-1.5 hover:bg-red-100 transition-colors">
@@ -2200,7 +2200,7 @@ function RestrictedAreas({ requests, user, apiMode = false }) {
 
   const isAdmin = ["Administrator","Super Admin"].includes(user.role);
   const isAdminOrRecep = ["Administrator","Super Admin","Receptionist"].includes(user.role);
-  const isGuard = user.role === "Security Guard";
+  const isRestrictedStaff = ["Receptionist", "Security Guard"].includes(user.role);
 
   function loadAreas() {
     if (!apiMode) return;
@@ -2302,7 +2302,7 @@ function RestrictedAreas({ requests, user, apiMode = false }) {
           {isAdminOrRecep && (
             <Btn onClick={() => setShowCreate(true)}>+ New Area</Btn>
           )}
-          {(isGuard || isAdmin) && (<>
+          {(isRestrictedStaff || isAdmin) && (<>
             <Btn variant="outline" onClick={() => { setScanMode("entry"); setScanResult(null); setScanError(""); }}>🔍 Confirm Entry</Btn>
             <Btn variant="outline" onClick={() => { setScanMode("exit");  setScanResult(null); setScanError(""); }}>🚪 Confirm Exit</Btn>
           </>)}
@@ -2384,7 +2384,7 @@ function RestrictedAreas({ requests, user, apiMode = false }) {
                   ＋ Grant Access
                 </button>
               )}
-              {(isGuard || isAdmin) && (
+              {(isRestrictedStaff || isAdmin) && (
                 <button onClick={() => { setShowIssue(area); setIssueQR(""); setIssueBadge(""); setIssueResult(null); setIssueError(""); }}
                   className="text-xs px-3 py-1.5 rounded-lg border border-violet-200 text-violet-600 hover:bg-violet-50 font-medium transition-colors">
                   🪪 Issue Badge
@@ -4222,7 +4222,7 @@ function RoomGuard({ apiMode, user }) {
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold text-gray-900">My Room — {roomLabel({ name: myPost.post_name, room_number: myPost.post_room_number })}</h1>
-          <p className="text-sm text-gray-500">Scan visitor badges to log arrivals at your post.</p>
+          <p className="text-sm text-gray-500">Scan visitor badges to log arrivals at your room. Building entry / badge issuance is handled at the Front Desk.</p>
         </div>
         <div className="flex items-center gap-3">
           <span className={cls("px-3 py-1.5 rounded-lg text-xs font-semibold border",
@@ -4284,13 +4284,20 @@ function RoomGuard({ apiMode, user }) {
         {/* Step 2: Visitor Details + Verification (after lookup) */}
         {lookupResult && (
           <div className="mt-4">
-            <div className={cls("rounded-lg border p-4", lookupResult.is_correct_destination ? "bg-green-50 border-green-200" : "bg-amber-50 border-amber-200")}>
-              <div className="flex items-center gap-2 mb-3">
-                <span className="text-lg">{lookupResult.is_correct_destination ? "✅" : "⚠️"}</span>
-                <span className={cls("font-bold text-sm", lookupResult.is_correct_destination ? "text-green-800" : "text-amber-800")}>
-                  {lookupResult.is_correct_destination ? "Correct Destination" : "⚠️ Wrong Destination — this visitor is assigned to another room"}
+            <div className={cls("rounded-lg border p-4", lookupResult.is_correct_destination ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200")}>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-lg">{lookupResult.is_correct_destination ? "✅" : "⛔"}</span>
+                <span className={cls("font-bold text-sm", lookupResult.is_correct_destination ? "text-green-800" : "text-red-800")}>
+                  {lookupResult.is_correct_destination ? "Correct Destination" : "Not Your Visitor — Do Not Admit"}
                 </span>
               </div>
+              {!lookupResult.is_correct_destination && (
+                <p className="text-xs text-red-700 mb-2 mt-1">
+                  {lookupResult.destination_name
+                    ? <>This badge is issued to <b>{lookupResult.visitor_name}</b> for <b>{lookupResult.destination_name}</b>. This is {roomLabel({ name: myPost.post_name, room_number: myPost.post_room_number })} — route the visitor to their assigned room.</>
+                    : <>This badge has no room destination — that visitor is handled at the Front Desk, not a department room. Route them to the Front Desk.</>}
+                </p>
+              )}
 
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
                 <div><p className="text-[10px] text-gray-400 uppercase font-bold">Visitor</p><p className="text-sm font-semibold text-gray-900">{lookupResult.visitor_name}</p></div>
@@ -4306,8 +4313,8 @@ function RoomGuard({ apiMode, user }) {
                 <div><p className="text-[10px] text-gray-400 uppercase font-bold">Status</p><Badge status={lookupResult.status} /></div>
               </div>
 
-              {/* Verification Steps */}
-              {needsSecondaryId && (
+              {/* Verification Steps (only for a visitor assigned to THIS room) */}
+              {lookupResult.is_correct_destination && needsSecondaryId && (
                 <div className="border-t border-gray-200 pt-3 mt-3">
                   <h4 className="text-xs font-bold text-gray-700 mb-2">2. Verify Identity</h4>
                   <label className="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-white/60 transition-colors">
@@ -4321,7 +4328,7 @@ function RoomGuard({ apiMode, user }) {
                 </div>
               )}
 
-              {needsPhoto && (
+              {needsPhoto && lookupResult.is_correct_destination && (
                 <div className="border-t border-gray-200 pt-3 mt-3">
                   <h4 className="text-xs font-bold text-gray-700 mb-2">3. Capture Visitor Photo</h4>
                   {!photoCaptured && !cameraActive && (
@@ -4349,20 +4356,23 @@ function RoomGuard({ apiMode, user }) {
                 </div>
               )}
 
-              {/* Confirm Button */}
-              <div className="border-t border-gray-200 pt-3 mt-3 flex items-center justify-between">
-                {!canConfirm && (
-                  <p className="text-xs text-red-500">
-                    {!idVerified && needsSecondaryId && "Complete secondary ID verification. "}
-                    {needsPhoto && !photoCaptured && "Capture visitor photo."}
-                  </p>
-                )}
-                <button onClick={handleConfirmArrival} disabled={confirming || !canConfirm}
-                  className={cls("ml-auto px-6 py-2.5 rounded-lg text-sm font-semibold transition-colors",
-                    canConfirm ? "bg-green-600 text-white hover:bg-green-700" : "bg-gray-200 text-gray-400 cursor-not-allowed")}>
-                  {confirming ? "Confirming..." : "✅ Confirm Arrival"}
-                </button>
-              </div>
+              {/* Confirm Button — only ever shown for a visitor whose
+                  destination IS this guard's room */}
+              {lookupResult.is_correct_destination && (
+                <div className="border-t border-gray-200 pt-3 mt-3 flex items-center justify-between">
+                  {!canConfirm && (
+                    <p className="text-xs text-red-500">
+                      {!idVerified && needsSecondaryId && "Complete secondary ID verification. "}
+                      {needsPhoto && !photoCaptured && "Capture visitor photo."}
+                    </p>
+                  )}
+                  <button onClick={handleConfirmArrival} disabled={confirming || !canConfirm}
+                    className={cls("ml-auto px-6 py-2.5 rounded-lg text-sm font-semibold transition-colors",
+                      canConfirm ? "bg-green-600 text-white hover:bg-green-700" : "bg-gray-200 text-gray-400 cursor-not-allowed")}>
+                    {confirming ? "Confirming..." : "✅ Confirm Arrival"}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}
