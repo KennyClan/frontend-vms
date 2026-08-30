@@ -67,6 +67,12 @@ export function effectivePermissions(user) {
   const base = [...DEFAULT_MODULES_BY_ROLE[user.role] || []];
   const out = list.length ? list : base;
   if (!out.includes("dashboard")) out.push("dashboard");
+  // Badge Registry is role-scoped only (Admin / Super Admin / Receptionist
+  // per spec) — always show it even if an account's stored permission list
+  // predates the module, so stale toggles can't hide the panel.
+  if (["Administrator", "Super Admin", "Receptionist"].includes(user.role) && !out.includes("badges")) {
+    out.push("badges");
+  }
   return out;
 }
 
@@ -99,7 +105,8 @@ export function ROLE_MODULE_GUARD(user, pageId) {
     case "visitor-history":
       return hasModule(user, "visitor-history") && ["Employee", "Super Admin"].includes(role);
     case "badges":
-      return hasModule(user, "badges") && ["Administrator", "Super Admin", "Receptionist"].includes(role);
+      // Role scoped per spec — stored permission toggles do not apply.
+      return ["Administrator", "Super Admin", "Receptionist"].includes(role);
     default:
       return false;
   }
