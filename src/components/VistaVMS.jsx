@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
-import { getVisitRequests, createVisitRequest, approveRequest, assignRequest, checkInVisitor, checkOutVisitor, getVisitors, createVisitor, toggleBlockVisitor, getAuditLog, getAnalyticsSummary, getRestrictedAreas, createRestrictedArea, deleteRestrictedArea, grantRestrictedAccess, issueRestrictedBadge, confirmRestrictedEntry, confirmRestrictedExit, getAreaOccupants, getRequestRestrictedAccess, getStaff, createStaff, updateStaff, getPosts, createPost, getPostDetail, updatePost, getFloors, createFloor, updateFloor, deleteFloor, getFloorObjects, createFloorObject, updateFloorObject, deleteFloorObject, duplicateFloorObject, bulkSaveFloorObjects, scanArrival, lookupBadge, getRecentArrivals, scanDeparture, getDepartments, createDepartment, updateDepartment, deleteDepartment, createSelfVisit, confirmDestinationArrival, notifyHost, getRoomCapacity, getEmployees, getBadges } from "../services/api";
+import { getVisitRequests, createVisitRequest, approveRequest, assignRequest, checkInVisitor, checkOutVisitor, getVisitors, createVisitor, toggleBlockVisitor, getAuditLog, getAnalyticsSummary, getRestrictedAreas, createRestrictedArea, deleteRestrictedArea, grantRestrictedAccess, issueRestrictedBadge, confirmRestrictedEntry, confirmRestrictedExit, getAreaOccupants, getRequestRestrictedAccess, getStaff, getMyStaff, createStaff, updateStaff, getPosts, createPost, getPostDetail, updatePost, getFloors, createFloor, updateFloor, deleteFloor, getFloorObjects, createFloorObject, updateFloorObject, deleteFloorObject, duplicateFloorObject, bulkSaveFloorObjects, scanArrival, lookupBadge, getRecentArrivals, scanDeparture, getDepartments, createDepartment, updateDepartment, deleteDepartment, createSelfVisit, confirmDestinationArrival, notifyHost, getRoomCapacity, getEmployees, getBadges } from "../services/api";
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
@@ -2543,19 +2543,20 @@ function StaffManagement({ apiMode = false }) {
 
   useEffect(() => { loadStaff(); }, [apiMode]);
 
-  const [posts, setPosts] = useState([]);
   const [departments, setDepartments] = useState([]);
   useEffect(() => {
     if (!apiMode) return;
-    getPosts().then(r => setPosts(r.data || [])).catch(() => {});
     getDepartments().then(r => setDepartments(r.data || [])).catch(() => {});
   }, [apiMode]);
 
   async function handleCreate() {
     if (!form.name || !form.email || !form.password) return;
-    if (form.role === "Security Guard" && !form.post_id) {
-      setError("A Security Guard must be assigned to a room — select a post before saving.");
-      return;
+    if (form.role === "Security Guard") {
+      const dept = departments.find(d => d.id === form.department_id);
+      if (!dept || !dept.post_id) {
+        setError("A Security Guard must belong to a department whose room is linked — select a department with a linked room.");
+        return;
+      }
     }
     setSaving(true);
     try {
@@ -2588,15 +2589,6 @@ function StaffManagement({ apiMode = false }) {
       loadStaff();
     } catch (e) {
       setError(e?.response?.data?.detail || "Failed to update role.");
-    }
-  }
-
-  async function handlePostChange(id, postId) {
-    try {
-      await updateStaff(id, postId ? { post_id: postId } : { clear_post: true });
-      loadStaff();
-    } catch (e) {
-      setError(e?.response?.data?.detail || "Failed to update post.");
     }
   }
 
@@ -2697,16 +2689,14 @@ function StaffManagement({ apiMode = false }) {
                       {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
                     </select>
                   </td>
-                  <td className="px-4 py-3">
-                    <select value={s.post_id || ""} onChange={e => handlePostChange(s.id, e.target.value || null)}
-                      className="text-xs px-2 py-1 rounded-lg border border-gray-200 bg-white max-w-[140px]">
-                      {s.role === "Security Guard" ? (
-                        s.post_id ? null : <option value="">— Required —</option>
-                      ) : (
-                        <option value="">Unassigned</option>
-                      )}
-{posts.map(p => <option key={p.id} value={p.id}>{roomLabel(p)}</option>)}
-                    </select>
+<td className="px-4 py-3">
+                    {s.post_id ? (
+                      <span className="text-xs font-medium text-gray-700">{roomLabel({ name: s.post_name, room_number: s.post_room_number })}</span>
+                    ) : s.role === "Security Guard" ? (
+                      <span className="text-[11px] text-red-500 font-medium">No room — assign a department with a linked room</span>
+                    ) : (
+                      <span className="text-xs text-gray-400">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <span className={cls("px-2 py-0.5 rounded-full text-[11px] font-semibold",
@@ -2730,7 +2720,8 @@ function StaffManagement({ apiMode = false }) {
       <Dialog open={showCreate} title="Create Staff Account" onClose={() => setShowCreate(false)}
         footer={<>
           <Btn variant="ghost" onClick={() => setShowCreate(false)}>Cancel</Btn>
-          <Btn onClick={handleCreate} disabled={saving || !form.name || !form.email || !form.password || (form.role === "Security Guard" && !form.post_id)}>
+          <Btn onClick={handleCreate} disabled={saving || !form.name || !form.email || !form.password ||
+            (form.role === "Security Guard" && (!form.department_id || !departments.find(d => d.id === form.department_id)?.post_id))}>
             {saving ? "Creating..." : "Create Account"}
           </Btn>
         </>}>
@@ -2766,15 +2757,26 @@ function StaffManagement({ apiMode = false }) {
           </select>
         </label>
         <label className="block text-xs font-semibold text-gray-600">
-          Assign to Post {form.role === "Security Guard" && <span className="text-red-500">*</span>}
-          <select value={form.post_id || ""} onChange={e => setForm(p => ({...p, post_id: e.target.value || null}))}
-            className={cls("mt-1 w-full h-9 px-3 rounded-[8px] border text-sm outline-none",
-              form.role === "Security Guard" && !form.post_id ? "border-red-300 bg-red-50" : "border-gray-200")}>
-            <option value="">{form.role === "Security Guard" ? "— Required: select a room —" : "No post (unassigned)"}</option>
-            {posts.map(p => <option key={p.id} value={p.id}>{roomLabel(p)}</option>)}
-          </select>
-          {form.role === "Security Guard" && !form.post_id && (
-            <span className="mt-1 block text-[11px] text-red-500">A Security Guard cannot scan without a room — required before saving.</span>
+          Room (Post) — auto-derived from the selected department
+          <div className={cls("mt-1 w-full h-9 px-3 rounded-[8px] border text-sm flex items-center",
+            (() => {
+              const dept = departments.find(d => d.id === form.department_id);
+              if (form.role === "Security Guard" && (!dept || !dept.post_id)) return "border-red-300 bg-red-50";
+              return "border-gray-200 bg-gray-50";
+            })()
+          )}>
+            {(() => {
+              const dept = departments.find(d => d.id === form.department_id);
+              if (!form.department_id) return <span className="text-gray-400 text-sm">Select a department first</span>;
+              if (!dept?.post_id) return <span className={cls("text-sm", form.role === "Security Guard" ? "text-red-500 font-medium" : "text-gray-400")}>No room linked to this department yet — link one in Departments</span>;
+              return <span className="text-sm text-gray-800 font-medium">{roomLabel({ name: dept.post_name, room_number: dept.post_room_number })}</span>;
+            })()}
+          </div>
+          {form.role === "Security Guard" && !form.department_id && (
+            <span className="mt-1 block text-[11px] text-red-500">A Security Guard must have a department — its room is the guard's post.</span>
+          )}
+          {form.role === "Security Guard" && form.department_id && !departments.find(d => d.id === form.department_id)?.post_id && (
+            <span className="mt-1 block text-[11px] text-red-500">A Security Guard cannot scan without a room — link the room in Departments first.</span>
           )}
         </label>
       </Dialog>
@@ -2807,8 +2809,9 @@ function DepartmentsManagement({ apiMode = false }) {
   const [error, setError] = useState("");
   const [showCreate, setShowCreate] = useState(false);
   const [showEdit, setShowEdit] = useState(null);
-  const [form, setForm] = useState({ name: "", description: "", is_restricted: false, restricted_area_id: null });
+  const [form, setForm] = useState({ name: "", description: "", is_restricted: false, restricted_area_id: null, post_id: null });
   const [restrictedAreas, setRestrictedAreas] = useState([]);
+  const [posts, setPosts] = useState([]);
   const [saving, setSaving] = useState(false);
 
   function loadDepartments() {
@@ -2833,7 +2836,7 @@ function DepartmentsManagement({ apiMode = false }) {
     try {
       await createDepartment(form);
       setShowCreate(false);
-      setForm({ name: "", description: "", is_restricted: false, restricted_area_id: null });
+      setForm({ name: "", description: "", is_restricted: false, restricted_area_id: null, post_id: null });
       loadDepartments();
     } catch (e) {
       setError(e?.response?.data?.detail || "Failed to create department.");
@@ -2848,7 +2851,7 @@ function DepartmentsManagement({ apiMode = false }) {
     try {
       await updateDepartment(showEdit.id, form);
       setShowEdit(null);
-      setForm({ name: "", description: "", is_restricted: false, restricted_area_id: null });
+      setForm({ name: "", description: "", is_restricted: false, restricted_area_id: null, post_id: null });
       loadDepartments();
     } catch (e) {
       setError(e?.response?.data?.detail || "Failed to update department.");
@@ -2868,7 +2871,7 @@ function DepartmentsManagement({ apiMode = false }) {
   }
 
   function openEdit(dept) {
-    setForm({ name: dept.name, description: dept.description || "", is_restricted: dept.is_restricted, restricted_area_id: dept.restricted_area_id || null });
+    setForm({ name: dept.name, description: dept.description || "", is_restricted: dept.is_restricted, restricted_area_id: dept.restricted_area_id || null, post_id: dept.post_id || null });
     setShowEdit(dept);
   }
 
@@ -2879,7 +2882,7 @@ function DepartmentsManagement({ apiMode = false }) {
           <h1 className="text-xl font-bold text-gray-900">Departments</h1>
           <p className="text-sm text-gray-500">Organize staff into departments. Mark restricted departments for badge-controlled access.</p>
         </div>
-        <Btn onClick={() => { setForm({ name: "", description: "", is_restricted: false, restricted_area_id: null }); setShowCreate(true); }}>+ New Department</Btn>
+        <Btn onClick={() => { setForm({ name: "", description: "", is_restricted: false, restricted_area_id: null, post_id: null }); setShowCreate(true); }}>+ New Department</Btn>
       </div>
 
       {error && <p className="text-sm text-red-500">{error}</p>}
@@ -2909,6 +2912,14 @@ function DepartmentsManagement({ apiMode = false }) {
                   <p className="text-xs text-red-700 font-medium">{d.restricted_area_name}</p>
                 </div>
               )}
+              <div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">
+                <p className="text-[10px] text-gray-400 font-bold uppercase">Room (Post)</p>
+                <p className="text-xs text-gray-700 font-medium">
+                  {d.post_id
+                    ? roomLabel({ name: d.post_name, room_number: d.post_room_number })
+                    : <span className="text-gray-400">No room linked yet</span>}
+                </p>
+              </div>
               <div className="flex items-center justify-between mt-auto pt-2 border-t border-gray-100">
                 <span className="text-xs text-gray-400">{d.member_count} member{d.member_count !== 1 ? "s" : ""}</span>
                 <div className="flex gap-2">
@@ -2948,6 +2959,16 @@ function DepartmentsManagement({ apiMode = false }) {
             </select>
           </label>
         )}
+        <label className="block text-xs font-semibold text-gray-600 mt-2">
+          Room (Post) — guards of this department are posted in this room
+          <select value={form.post_id || ""} onChange={e => setForm(p => ({...p, post_id: e.target.value || null}))}
+            className="mt-1 w-full h-9 px-3 rounded-[8px] border border-gray-200 text-sm outline-none">
+            <option value="">No room yet (one department = one room)</option>
+            {posts.map(p => (
+              <option key={p.id} value={p.id}>{roomLabel({ name: p.name, room_number: p.room_number })}</option>
+            ))}
+          </select>
+        </label>
       </Dialog>
 
       {/* Edit Dialog */}
@@ -2977,6 +2998,16 @@ function DepartmentsManagement({ apiMode = false }) {
             </select>
           </label>
         )}
+        <label className="block text-xs font-semibold text-gray-600 mt-2">
+          Room (Post) — guards of this department are posted in this room
+          <select value={form.post_id || ""} onChange={e => setForm(p => ({...p, post_id: e.target.value || null}))}
+            className="mt-1 w-full h-9 px-3 rounded-[8px] border border-gray-200 text-sm outline-none">
+            <option value="">No room linked (one department = one room)</option>
+            {posts.map(p => (
+              <option key={p.id} value={p.id}>{roomLabel({ name: p.name, room_number: p.room_number })}</option>
+            ))}
+          </select>
+        </label>
       </Dialog>
     </div>
   );
@@ -3095,8 +3126,9 @@ function FloorPlanEditor({ apiMode = false, user }) {
   useEffect(() => { if (activeFloorId) loadObjects(activeFloorId); }, [activeFloorId]);
 
   // Load posts for linkage dropdown
-  useEffect(() => {
+useEffect(() => {
     if (!apiMode) return;
+    getRestrictedAreas().then(r => setRestrictedAreas(r.data || [])).catch(() => {});
     getPosts().then(r => setPosts(r.data || [])).catch(() => {});
   }, [apiMode]);
 
@@ -4062,9 +4094,9 @@ function RoomGuard({ apiMode, user }) {
 
   useEffect(() => {
     if (!apiMode) return;
-    getStaff()
+    getMyStaff()
       .then(r => {
-        const me = r.data.find(s => s.id === user.id);
+        const me = r.data;
         if (me?.post_id) {
           setMyPost(me);
           loadRecentArrivals(me.post_id);

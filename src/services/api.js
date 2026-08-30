@@ -107,6 +107,7 @@ export const getAreaOccupants      = (areaId)        => api.get(`/restricted-are
 
 // ── Staff Management (Admin only) ────────────────────────────────
 export const getStaff    = ()       => api.get('/staff')
+export const getMyStaff  = ()       => api.get('/staff/me')
 export const createStaff = (data)   => api.post('/staff', data)
 export const updateStaff = (id, data) => api.patch(`/staff/${id}`, data)
 
