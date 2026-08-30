@@ -2553,6 +2553,10 @@ function StaffManagement({ apiMode = false }) {
 
   async function handleCreate() {
     if (!form.name || !form.email || !form.password) return;
+    if (form.role === "Security Guard" && !form.post_id) {
+      setError("A Security Guard must be assigned to a room — select a post before saving.");
+      return;
+    }
     setSaving(true);
     try {
       const payload = { ...form };
@@ -2696,7 +2700,11 @@ function StaffManagement({ apiMode = false }) {
                   <td className="px-4 py-3">
                     <select value={s.post_id || ""} onChange={e => handlePostChange(s.id, e.target.value || null)}
                       className="text-xs px-2 py-1 rounded-lg border border-gray-200 bg-white max-w-[140px]">
-                      <option value="">Unassigned</option>
+                      {s.role === "Security Guard" ? (
+                        s.post_id ? null : <option value="">— Required —</option>
+                      ) : (
+                        <option value="">Unassigned</option>
+                      )}
                       {posts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </select>
                   </td>
@@ -2722,7 +2730,7 @@ function StaffManagement({ apiMode = false }) {
       <Dialog open={showCreate} title="Create Staff Account" onClose={() => setShowCreate(false)}
         footer={<>
           <Btn variant="ghost" onClick={() => setShowCreate(false)}>Cancel</Btn>
-          <Btn onClick={handleCreate} disabled={saving || !form.name || !form.email || !form.password}>
+          <Btn onClick={handleCreate} disabled={saving || !form.name || !form.email || !form.password || (form.role === "Security Guard" && !form.post_id)}>
             {saving ? "Creating..." : "Create Account"}
           </Btn>
         </>}>
@@ -2758,12 +2766,16 @@ function StaffManagement({ apiMode = false }) {
           </select>
         </label>
         <label className="block text-xs font-semibold text-gray-600">
-          Assign to Post
+          Assign to Post {form.role === "Security Guard" && <span className="text-red-500">*</span>}
           <select value={form.post_id || ""} onChange={e => setForm(p => ({...p, post_id: e.target.value || null}))}
-            className="mt-1 w-full h-9 px-3 rounded-[8px] border border-gray-200 text-sm outline-none">
-            <option value="">No post (unassigned)</option>
+            className={cls("mt-1 w-full h-9 px-3 rounded-[8px] border text-sm outline-none",
+              form.role === "Security Guard" && !form.post_id ? "border-red-300 bg-red-50" : "border-gray-200")}>
+            <option value="">{form.role === "Security Guard" ? "— Required: select a room —" : "No post (unassigned)"}</option>
             {posts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
+          {form.role === "Security Guard" && !form.post_id && (
+            <span className="mt-1 block text-[11px] text-red-500">A Security Guard cannot scan without a room — required before saving.</span>
+          )}
         </label>
       </Dialog>
 
@@ -3886,6 +3898,18 @@ function FloorPlanEditor({ apiMode = false, user }) {
                               <p className="text-xs text-gray-400 italic">No visitors currently inside</p>
                             )}
                           </div>
+                          <div>
+                            <p className="text-[11px] text-gray-400 uppercase font-bold mb-1">Last Scan at this Room</p>
+                            {roomDetail.last_scan ? (
+                              <p className="text-xs text-gray-700">
+                                {roomDetail.last_scan.scanned_by_name || "Unknown guard"}
+                                {" · "}{badgeDate(roomDetail.last_scan.arrived_at)}
+                                {roomDetail.last_scan.departed_at && " (departed)"}
+                              </p>
+                            ) : (
+                              <p className="text-xs font-semibold text-red-600">No scans recorded — an assigned guard has never scanned here</p>
+                            )}
+                          </div>
                         </>
                       ) : (
                         <p className="text-xs text-gray-400 italic">No VMS data linked</p>
@@ -3982,6 +4006,18 @@ function FloorPlanEditor({ apiMode = false, user }) {
                               </div>
                             </div>
                           )}
+                          <div>
+                            <p className="text-[11px] text-gray-400 uppercase font-bold mb-1">Last Scan at this Room</p>
+                            {roomDetail.last_scan ? (
+                              <p className="text-xs text-gray-700">
+                                {roomDetail.last_scan.scanned_by_name || "Unknown guard"}
+                                {" · "}{badgeDate(roomDetail.last_scan.arrived_at)}
+                                {roomDetail.last_scan.departed_at && " (departed)"}
+                              </p>
+                            ) : (
+                              <p className="text-xs font-semibold text-red-600">No scans recorded</p>
+                            )}
+                          </div>
                         </>
                       ) : null}
                     </>
