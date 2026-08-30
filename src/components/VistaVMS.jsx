@@ -4523,7 +4523,14 @@ function localDateISO(d = new Date()) {
 function ReceptionistDashboard({ requests, visitors, user, apiMode }) {
   const today = localDateISO();
   const todayRequests = requests.filter(r => r.visit_date === today);
-  const pending = requests.filter(r => r.approval_status === "Pending");
+  // Only the matched host employee approves — hide other people's pending
+  // requests from employees so they never see an Approve button they can't
+  // act on. Receptionists see everything (they assign/reject).
+  const isEmployeeSide = user.role === "Employee";
+  const pending = requests.filter(r =>
+    r.approval_status === "Pending" &&
+    (!isEmployeeSide || (r.host_staff_id && String(r.host_staff_id) === String(user.id)))
+  );
   const checkedIn = requests.filter(r => r.status === "Checked In");
   const checkedOutToday = requests.filter(r => r.status === "Checked Out" && r.visit_date === today);
   // Future-dated visits (never invisible): anything after today that isn't
@@ -4533,6 +4540,7 @@ function ReceptionistDashboard({ requests, visitors, user, apiMode }) {
     .sort((a, b) => a.visit_date.localeCompare(b.visit_date));
 
   const [approving, setApproving] = useState(null);
+  const [approveError, setApproveError] = useState("");
   const [rejectTarget, setRejectTarget] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
   const [rejecting, setRejecting]       = useState(null);
@@ -4574,11 +4582,13 @@ function ReceptionistDashboard({ requests, visitors, user, apiMode }) {
   }
 
   async function handleApprove(req) {
-    setApproving(req.id);
+    setApproving(req.id); setApproveError("");
     try {
       await approveRequest(req.id, { action: "Approved" });
       if (typeof refreshRequests === "function") refreshRequests();
-    } catch {}
+    } catch (e) {
+      setApproveError(e?.response?.data?.detail || "Failed to approve. Try again.");
+    }
     setApproving(null);
   }
 
@@ -4655,6 +4665,9 @@ function ReceptionistDashboard({ requests, visitors, user, apiMode }) {
             <h3 className="font-bold text-sm text-gray-900">⏳ Pending Approval — needs your action</h3>
             <span className="bg-amber-100 text-amber-700 text-xs font-semibold px-2 py-0.5 rounded-full">{pending.length}</span>
           </div>
+          {approveError && (
+            <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mb-3">{approveError}</p>
+          )}
           <div className="flex flex-col gap-2">
             {pending.map(req => (
               <div key={req.id} className="flex items-center gap-3 py-2.5 px-3 rounded-lg bg-amber-50/60 border border-amber-100">
