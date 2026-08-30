@@ -17,26 +17,27 @@ export const MODULES = {
   departments:      { label: "Departments", icon: "🏢" },
   floorplan:        { label: "Floor Plan", icon: "🗺️" },
   "visitor-history":{ label: "Visitor History", icon: "👥" },
+  badges:           { label: "Badge Registry", icon: "🪪" },
 };
 
 // Sidebar/nav ordering
 export const MODULE_ORDER = [
   "dashboard", "visitors", "requests", "security", "myroom",
   "analytics", "audit", "restricted", "staff", "departments",
-  "floorplan", "visitor-history",
+  "floorplan", "visitor-history", "badges",
 ];
 
 // Role defaults — mirrors backend DEFAULT_MODULES_BY_ROLE in models.py
 export const DEFAULT_MODULES_BY_ROLE = {
   "Super Admin": [
     "dashboard", "visitors", "requests", "security", "myroom",
-    "analytics", "audit", "restricted", "staff", "departments", "floorplan",
+    "analytics", "audit", "restricted", "staff", "departments", "floorplan", "badges",
   ],
   "Administrator": [
     "dashboard", "visitors", "requests", "security",
-    "analytics", "audit", "restricted", "staff", "departments", "floorplan",
+    "analytics", "audit", "restricted", "staff", "departments", "floorplan", "badges",
   ],
-  "Receptionist": ["dashboard", "visitors", "requests", "analytics", "audit", "floorplan"],
+  "Receptionist": ["dashboard", "visitors", "requests", "analytics", "audit", "floorplan", "badges"],
   "Security Guard": ["dashboard", "myroom", "visitors", "security", "restricted"],
   "Employee": ["dashboard", "requests", "visitor-history"],
 };
@@ -97,6 +98,8 @@ export function ROLE_MODULE_GUARD(user, pageId) {
       return hasModule(user, "floorplan") && ["Administrator", "Super Admin", "Receptionist", "Security Guard"].includes(role);
     case "visitor-history":
       return hasModule(user, "visitor-history") && ["Employee", "Super Admin"].includes(role);
+    case "badges":
+      return hasModule(user, "badges") && ["Administrator", "Super Admin", "Receptionist"].includes(role);
     default:
       return false;
   }

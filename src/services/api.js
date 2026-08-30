@@ -85,6 +85,9 @@ export const getRoomCapacity = () => api.get('/visit-requests/room-capacity')
 // ── Employee List (for dropdown) ─────────────────────────────────
 export const getEmployees = () => api.get('/visit-requests/employees')
 
+// ── Badge Registry (Admin / Super Admin / Receptionist) ──────────
+export const getBadges = (params) => api.get('/badges', { params })
+
 // ── Audit & Analytics ─────────────────────────────────────────────
 export const getAuditLog        = (params) => api.get('/audit-log', { params })
 export const getAnalyticsSummary = ()      => api.get('/analytics/summary')

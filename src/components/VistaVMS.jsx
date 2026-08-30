@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
-import { getVisitRequests, createVisitRequest, approveRequest, assignRequest, checkInVisitor, checkOutVisitor, getVisitors, createVisitor, toggleBlockVisitor, getAuditLog, getAnalyticsSummary, getRestrictedAreas, createRestrictedArea, deleteRestrictedArea, grantRestrictedAccess, issueRestrictedBadge, confirmRestrictedEntry, confirmRestrictedExit, getAreaOccupants, getRequestRestrictedAccess, getStaff, createStaff, updateStaff, getPosts, createPost, getPostDetail, updatePost, getFloors, createFloor, updateFloor, deleteFloor, getFloorObjects, createFloorObject, updateFloorObject, deleteFloorObject, duplicateFloorObject, bulkSaveFloorObjects, scanArrival, lookupBadge, getRecentArrivals, scanDeparture, getDepartments, createDepartment, updateDepartment, deleteDepartment, createSelfVisit, confirmDestinationArrival, notifyHost, getRoomCapacity, getEmployees } from "../services/api";
+import { getVisitRequests, createVisitRequest, approveRequest, assignRequest, checkInVisitor, checkOutVisitor, getVisitors, createVisitor, toggleBlockVisitor, getAuditLog, getAnalyticsSummary, getRestrictedAreas, createRestrictedArea, deleteRestrictedArea, grantRestrictedAccess, issueRestrictedBadge, confirmRestrictedEntry, confirmRestrictedExit, getAreaOccupants, getRequestRestrictedAccess, getStaff, createStaff, updateStaff, getPosts, createPost, getPostDetail, updatePost, getFloors, createFloor, updateFloor, deleteFloor, getFloorObjects, createFloorObject, updateFloorObject, deleteFloorObject, duplicateFloorObject, bulkSaveFloorObjects, scanArrival, lookupBadge, getRecentArrivals, scanDeparture, getDepartments, createDepartment, updateDepartment, deleteDepartment, createSelfVisit, confirmDestinationArrival, notifyHost, getRoomCapacity, getEmployees, getBadges } from "../services/api";
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
@@ -4370,6 +4370,149 @@ function RoomGuard({ apiMode, user }) {
 // it returns the UTC date, which lags a day behind the Philippines'
 // local date between midnight and ~8 AM — making "today" visits vanish
 // from the dashboard they were created for.
+// ─── BADGE REGISTRY (Admin / Super Admin / Receptionist) ─────────
+const BADGE_TABS = [
+  { id: "all", label: "All" },
+  { id: "active", label: "Active" },
+  { id: "returned", label: "Returned" },
+  { id: "history", label: "History" },
+];
+const BADGE_LEVEL_LABEL = { "none": "Public", "restricted": "Restricted", "highly_restricted": "Highly Restricted" };
+
+function badgeDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return String(iso);
+  return d.toLocaleString(undefined, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+function badgeDuration(beginIso, endIso) {
+  const a = new Date(beginIso), b = endIso ? new Date(endIso) : new Date();
+  if (isNaN(a.getTime()) || isNaN(b.getTime()) || b < a) return "—";
+  const mins = Math.floor((b - a) / 60000);
+  if (mins < 60) return `${mins}m`;
+  const h = Math.floor(mins / 60);
+  if (h < 24) return `${h}h ${mins % 60}m`;
+  return `${Math.floor(h / 24)}d ${h % 24}h ${mins % 60}m`;
+}
+
+function BadgeRegistry({ apiMode = false }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [tab, setTab] = useState("all");
+  const [q, setQ] = useState("");
+  const [sel, setSel] = useState(null);
+
+  useEffect(() => {
+    if (!apiMode) return;
+    setLoading(true);
+    const t = setTimeout(() => {
+      getBadges({ status: tab === "history" ? "all" : tab, q })
+        .then(r => { setRows(r.data || []); setError(""); })
+        .catch(e => setError(e?.response?.data?.detail || "Failed to load the badge registry."))
+        .finally(() => setLoading(false));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [apiMode, tab, q]);
+
+  const pill = st => st === "active" ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600";
+
+  return (
+    <div className="bg-white rounded-[12px] border border-gray-200 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div>
+          <h2 className="font-bold text-lg text-gray-900">🪪 Badge Registry</h2>
+          <p className="text-xs text-gray-500">Audit trail of every badge issuance and return. Admin · Super Admin · Receptionist only.</p>
+        </div>
+        <div className="relative w-full sm:w-64">
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search badge or visitor…"
+            className="w-full h-9 pl-3 pr-8 rounded-[8px] border border-gray-200 text-sm focus:ring-2 focus:ring-blue-200 outline-none" />
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm">🔍</span>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-1.5 mb-4">
+        {BADGE_TABS.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)}
+            className={cls("px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors",
+              tab === t.id ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200")}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {error && <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2 mb-3">{error}</p>}
+      {loading ? (
+        <p className="text-sm text-gray-400 py-8 text-center">Loading…</p>
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-gray-400 py-8 text-center">No badges{tab === "active" || tab === "returned" ? ` ${tab}` : ""} match this filter.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-[10px] uppercase text-gray-400 border-b border-gray-100">
+                <th className="py-2 pr-3 font-bold">Badge</th>
+                <th className="py-2 pr-3 font-bold">Visitor</th>
+                <th className="py-2 pr-3 font-bold">Room</th>
+                <th className="py-2 pr-3 font-bold">Status</th>
+                <th className="py-2 font-bold">Issued At</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={r.id || i} onClick={() => setSel(r)}
+                  className="border-b border-gray-50 hover:bg-blue-50/40 cursor-pointer transition-colors">
+                  <td className="py-2.5 pr-3 font-mono text-xs font-semibold text-gray-800">{r.badge_number || "—"}</td>
+                  <td className="py-2.5 pr-3 font-medium text-gray-900">{r.visitor_name || "—"}</td>
+                  <td className="py-2.5 pr-3 text-xs text-gray-600">{r.room || "—"}</td>
+                  <td className="py-2.5 pr-3"><span className={cls("inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold capitalize", pill(r.status))}>{r.status || "—"}</span></td>
+                  <td className="py-2.5 text-xs text-gray-500">{badgeDate(r.issued_at)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <Dialog open={!!sel} title="Badge Detail" onClose={() => setSel(null)} wide>
+        {sel && (
+          <>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[10px] text-gray-400 uppercase font-bold">Badge Number</p>
+                <p className="font-mono text-lg font-bold text-gray-900">{sel.badge_number || "—"}</p>
+              </div>
+              <span className={cls("px-2.5 py-1 rounded-full text-[11px] font-semibold capitalize", pill(sel.status))}>{sel.status || "—"}</span>
+            </div>
+            {sel.status === "active" && (
+              <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-sm text-green-700 font-medium">
+                ● Still in use — active for {badgeDuration(sel.issued_at)}
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-3 border-t border-gray-100 pt-3">
+              <InfoRow label="Visitor" value={sel.visitor_name} />
+              <InfoRow label="Purpose" value={sel.purpose} />
+              <InfoRow label="Host" value={sel.host_name} />
+              <InfoRow label="Destination Room" value={sel.room || "No room assigned"} />
+              <InfoRow label="Room Restriction Level" value={BADGE_LEVEL_LABEL[sel.room_restriction_level] || "—"} />
+              <InfoRow label="Visit Reference" value={sel.visit_request_id ? sel.visit_request_id.slice(0, 8) : "—"} />
+              <InfoRow label="Issued At" value={badgeDate(sel.issued_at)} />
+              <InfoRow label="Issued By" value={sel.issued_by_name} />
+              <InfoRow label="Returned At" value={sel.returned_at ? badgeDate(sel.returned_at) : "—"} />
+              {sel.status === "returned" && <InfoRow label="Duration Held" value={sel.issued_at && sel.returned_at ? badgeDuration(sel.issued_at, sel.returned_at) : "—"} />}
+            </div>
+          </>
+        )}
+      </Dialog>
+    </div>
+  );
+}
+
+// ─── RECEPTIONIST DASHBOARD ──────────────────────────────────
+// Local calendar date (YYYY-MM-DD). Using toISOString() here was buggy:
+// it returns the UTC date, which lags a day behind the Philippines'
+// local date between midnight and ~8 AM — making "today" visits vanish
+// from the dashboard they were created for.
 function localDateISO(d = new Date()) {
   const y = String(d.getFullYear());
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -4958,6 +5101,9 @@ export default function VistaVMS({ apiMode = false, authUser = null, onSignInWit
           : <AccessDenied />)}
         {page === "visitor-history" && (ROLE_MODULE_GUARD(user, "visitor-history")
           ? <VisitRequestsPage requests={requests} setRequests={setRequests} user={user} apiMode={apiMode} refreshRequests={refreshRequests} defaultFilter="Checked Out" />
+          : <AccessDenied />)}
+        {page === "badges" && (ROLE_MODULE_GUARD(user, "badges")
+          ? <BadgeRegistry apiMode={apiMode} />
           : <AccessDenied />)}
       </main>
     </div>
