@@ -122,6 +122,7 @@ export const updatePost     = (id, data) => api.patch(`/posts/${id}`, data)
 export const scanArrival    = (postId, data) => api.post(`/posts/${postId}/arrivals`, data)
 export const lookupBadge    = (postId, data) => api.post(`/posts/${postId}/lookup-badge`, data)
 export const getRecentArrivals = (postId) => api.get(`/posts/${postId}/recent-arrivals`)
+export const scanDeparture     = (postId, data) => api.post(`/posts/${postId}/departures`, data)
 
 // ── Floor Plan Editor ───────────────────────────────────────────
 export const getFloors             = ()        => api.get('/floor-plan')

@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
-import { getVisitRequests, createVisitRequest, approveRequest, assignRequest, checkInVisitor, checkOutVisitor, getVisitors, createVisitor, toggleBlockVisitor, getAuditLog, getAnalyticsSummary, getRestrictedAreas, createRestrictedArea, deleteRestrictedArea, grantRestrictedAccess, issueRestrictedBadge, confirmRestrictedEntry, confirmRestrictedExit, getAreaOccupants, getRequestRestrictedAccess, getStaff, createStaff, updateStaff, getPosts, createPost, getPostDetail, updatePost, getFloors, createFloor, updateFloor, deleteFloor, getFloorObjects, createFloorObject, updateFloorObject, deleteFloorObject, duplicateFloorObject, bulkSaveFloorObjects, scanArrival, lookupBadge, getRecentArrivals, getDepartments, createDepartment, updateDepartment, deleteDepartment, createSelfVisit, confirmDestinationArrival, notifyHost, getRoomCapacity, getEmployees } from "../services/api";
+import { getVisitRequests, createVisitRequest, approveRequest, assignRequest, checkInVisitor, checkOutVisitor, getVisitors, createVisitor, toggleBlockVisitor, getAuditLog, getAnalyticsSummary, getRestrictedAreas, createRestrictedArea, deleteRestrictedArea, grantRestrictedAccess, issueRestrictedBadge, confirmRestrictedEntry, confirmRestrictedExit, getAreaOccupants, getRequestRestrictedAccess, getStaff, createStaff, updateStaff, getPosts, createPost, getPostDetail, updatePost, getFloors, createFloor, updateFloor, deleteFloor, getFloorObjects, createFloorObject, updateFloorObject, deleteFloorObject, duplicateFloorObject, bulkSaveFloorObjects, scanArrival, lookupBadge, getRecentArrivals, scanDeparture, getDepartments, createDepartment, updateDepartment, deleteDepartment, createSelfVisit, confirmDestinationArrival, notifyHost, getRoomCapacity, getEmployees } from "../services/api";
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
@@ -1201,11 +1201,12 @@ function VisitRequestsPage({ requests, setRequests, user, apiMode = false, refre
 
   const isEmployee  = user.role === "Employee";
   const isReception = user.role === "Receptionist";
-  // Only the host Employee or an Administrator may APPROVE (backend enforces
-  // the same rule). Receptionists may reject or re-route, never approve.
-  const canApprove  = ["Administrator"].includes(user.role) || isEmployee;
-  const canReject   = canApprove || isReception;
-  const canCheckIn  = ["Administrator","Security Guard"].includes(user.role);
+  // Only the matched host Employee may APPROVE (backend enforces this);
+  // rejection stays with the host Employee or the Receptionist. Admins have
+  // no approve/reject controls per the access spec.
+  const canApprove  = isEmployee;
+  const canReject   = isEmployee || isReception;
+  const canCheckIn  = ["Administrator","Super Admin","Security Guard"].includes(user.role);
   const filtered   = requests.filter(r =>
     filterStatus === "All" || r.approval_status === filterStatus || r.status === filterStatus
   );
@@ -4014,6 +4015,7 @@ function RoomGuard({ apiMode, user }) {
   const [confirming, setConfirming] = useState(false);
   const [idVerified, setIdVerified] = useState(false);
   const [photoCaptured, setPhotoCaptured] = useState(false);
+  const [photoDataUrl, setPhotoDataUrl] = useState(null);
   const [cameraActive, setCameraActive] = useState(false);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -4041,7 +4043,10 @@ function RoomGuard({ apiMode, user }) {
     getPosts()
       .then(r => {
         const post = r.data.find(p => p.id === postId);
-        if (post) setRoomAccess(post.access_level || "Public");
+        if (post) {
+          const levelMap = { "none": "Public", "restricted": "Restricted", "highly_restricted": "Highly Restricted" };
+          setRoomAccess(levelMap[post.restriction_level] || post.access_level || "Public");
+        }
       })
       .catch(() => {});
   }
@@ -4075,18 +4080,31 @@ function RoomGuard({ apiMode, user }) {
     setConfirming(true);
     setScanError("");
     try {
-      const r = await scanArrival(myPost.post_id, { badge_number: lookupResult.badge_number });
+      const r = await scanArrival(myPost.post_id, {
+        badge_number: lookupResult.badge_number,
+        id_verified: !!idVerified,
+        photo_captured: !!photoCaptured,
+        photo: photoDataUrl,
+      });
       setScanResult(r.data);
       setLookupResult(null);
       setBadgeInput("");
       setIdVerified(false);
       setPhotoCaptured(false);
+      setPhotoDataUrl(null);
       loadRecentArrivals(myPost.post_id);
     } catch (e) {
       setScanError(e?.response?.data?.detail || "Failed to confirm arrival.");
     } finally {
       setConfirming(false);
     }
+  }
+
+  function handleDeparture(badgeNumber) {
+    if (!badgeNumber || !myPost?.post_id) return;
+    scanDeparture(myPost.post_id, { badge_number: badgeNumber })
+      .then(() => loadRecentArrivals(myPost.post_id))
+      .catch(e => setScanError(e?.response?.data?.detail || "Failed to check out visitor."));
   }
 
   function startCamera() {
@@ -4100,13 +4118,14 @@ function RoomGuard({ apiMode, user }) {
     const video = videoRef.current;
     const canvas = canvasRef.current;
     if (!video || !canvas) return;
-    canvas.width = video.videoWidth || 320;
-    canvas.height = video.videoHeight || 240;
-    canvas.getContext("2d").drawImage(video, 0, 0);
+    canvas.width = 320;
+    canvas.height = 240;
+    canvas.getContext("2d").drawImage(video, 0, 0, 320, 240);
     const stream = video.srcObject;
     if (stream) stream.getTracks().forEach(t => t.stop());
     setCameraActive(false);
     setPhotoCaptured(true);
+    setPhotoDataUrl(canvas.toDataURL("image/jpeg", 0.7));
   }
 
   function cancelCamera() {
@@ -4323,9 +4342,17 @@ function RoomGuard({ apiMode, user }) {
                     <td className="py-2.5 pr-3 text-xs text-gray-600">{a.purpose}</td>
                     <td className="py-2.5 pr-3 text-xs text-gray-500">{a.arrived_at ? new Date(a.arrived_at).toLocaleString() : "—"}</td>
                     <td className="py-2.5">
-                      {a.departed_at
-                        ? <span className="text-xs text-gray-400">Departed</span>
-                        : <span className="text-xs font-semibold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">Inside</span>}
+                      {a.departed_at ? (
+                        <span className="text-xs text-gray-400">Departed</span>
+                      ) : (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">Inside</span>
+                          <button onClick={() => handleDeparture(a.badge_number)}
+                            className="px-2 py-1 bg-gray-100 text-gray-600 rounded-lg text-[10px] font-semibold hover:bg-gray-200 transition-colors">
+                            Check out
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -4375,6 +4402,9 @@ function ReceptionistDashboard({ requests, visitors, user, apiMode }) {
   const [assigning, setAssigning]           = useState(false);
   const [assignError, setAssignError]       = useState("");
 
+  // Room capacity — live occupancy for real-time capacity display
+  const [roomCapacity, setRoomCapacity] = useState([]);
+
   // Employees can approve (their own) — receptionists can only re-route or reject.
   const isReceptionSide = user.role === "Receptionist";
 
@@ -4383,6 +4413,11 @@ function ReceptionistDashboard({ requests, visitors, user, apiMode }) {
     setAssignEmployee(assignTarget.host_staff_id || "");
     getEmployees().then(r => setEmployees(r.data)).catch(() => setEmployees([]));
   }, [assignTarget]);
+
+  useEffect(() => {
+    if (!apiMode) return;
+    getRoomCapacity().then(r => setRoomCapacity(r.data || [])).catch(() => setRoomCapacity([]));
+  }, [apiMode, requests]);
 
   async function openReject(req) {
     setRejectTarget(req);
@@ -4446,6 +4481,29 @@ function ReceptionistDashboard({ requests, visitors, user, apiMode }) {
         <Kpi label="Currently Inside" value={checkedIn.length} icon="🏢" color="bg-emerald-50 text-emerald-600" />
         <Kpi label="Checked Out Today" value={checkedOutToday.length} icon="🚪" color="bg-gray-50 text-gray-600" />
       </div>
+
+      {/* Rooms & Live Capacity — real-time occupancy per room */}
+      {roomCapacity.length > 0 && (
+        <div className="bg-white rounded-[12px] border border-gray-200 p-5">
+          <h3 className="font-bold text-sm text-gray-900 mb-3">🏢 Rooms &amp; Live Capacity</h3>
+          <div className="grid grid-cols-2 lg:grid-cols-3 gap-2">
+            {roomCapacity.map(room => (
+              <div key={room.id} className="rounded-lg border border-gray-100 p-3">
+                <p className="text-xs font-semibold text-gray-900 truncate">{room.name}</p>
+                <p className="text-[11px] text-gray-500">Floor {room.floor}</p>
+                <div className="mt-1.5 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                  <div className={cls("h-full rounded-full", room.current_occupancy >= room.capacity ? "bg-red-500" : "bg-green-500")}
+                    style={{ width: `${Math.min(100, Math.round((room.current_occupancy / Math.max(1, room.capacity)) * 100))}%` }} />
+                </div>
+                <p className={cls("mt-1 text-[11px] font-semibold", room.current_occupancy >= room.capacity ? "text-red-600" : "text-gray-500")}>
+                  {room.current_occupancy} / {room.capacity} inside
+                  {room.current_occupancy >= room.capacity && " · FULL"}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Pending Approvals — Quick Action */}
       {pending.length > 0 && (
