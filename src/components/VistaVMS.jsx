@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
-import { getVisitRequests, createVisitRequest, approveRequest, checkInVisitor, checkOutVisitor, getVisitors, createVisitor, toggleBlockVisitor, getAuditLog, getAnalyticsSummary, getRestrictedAreas, createRestrictedArea, deleteRestrictedArea, grantRestrictedAccess, issueRestrictedBadge, confirmRestrictedEntry, confirmRestrictedExit, getAreaOccupants, getRequestRestrictedAccess, getStaff, createStaff, updateStaff, getPosts, createPost, getPostDetail, updatePost, getFloors, createFloor, updateFloor, deleteFloor, getFloorObjects, createFloorObject, updateFloorObject, deleteFloorObject, duplicateFloorObject, bulkSaveFloorObjects, scanArrival, lookupBadge, getRecentArrivals, getDepartments, createDepartment, updateDepartment, deleteDepartment, createSelfVisit, confirmDestinationArrival, notifyHost, getRoomCapacity, getEmployees } from "../services/api";
+import { getVisitRequests, createVisitRequest, approveRequest, assignRequest, checkInVisitor, checkOutVisitor, getVisitors, createVisitor, toggleBlockVisitor, getAuditLog, getAnalyticsSummary, getRestrictedAreas, createRestrictedArea, deleteRestrictedArea, grantRestrictedAccess, issueRestrictedBadge, confirmRestrictedEntry, confirmRestrictedExit, getAreaOccupants, getRequestRestrictedAccess, getStaff, createStaff, updateStaff, getPosts, createPost, getPostDetail, updatePost, getFloors, createFloor, updateFloor, deleteFloor, getFloorObjects, createFloorObject, updateFloorObject, deleteFloorObject, duplicateFloorObject, bulkSaveFloorObjects, scanArrival, lookupBadge, getRecentArrivals, getDepartments, createDepartment, updateDepartment, deleteDepartment, createSelfVisit, confirmDestinationArrival, notifyHost, getRoomCapacity, getEmployees } from "../services/api";
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
@@ -1180,15 +1180,32 @@ function VisitRequestsPage({ requests, setRequests, user, apiMode = false, refre
   const [approving, setApproving]                 = useState(false);
   const [approveError, setApproveError]           = useState("");
 
+  // Reject-with-reason dialog state
+  const [rejectTarget, setRejectTarget] = useState(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejecting, setRejecting]       = useState(false);
+  const [rejectError, setRejectError]   = useState("");
+
+  // Assign-to-employee dialog state (receptionist re-routes a typo'd/missing host)
+  const [assignTarget, setAssignTarget]   = useState(null);
+  const [employees, setEmployees]         = useState([]);
+  const [assignEmployee, setAssignEmployee] = useState("");
+  const [assigning, setAssigning]         = useState(false);
+  const [assignError, setAssignError]     = useState("");
+
   // Employee self-visit dialog state
   const [showSelfVisit, setShowSelfVisit] = useState(false);
   const [selfVisitForm, setSelfVisitForm] = useState({ visitor_name: "", visitor_email: "", company: "", phone: "", visit_date: "", expected_time: "", purpose: "" });
   const [savingSelfVisit, setSavingSelfVisit] = useState(false);
   const [selfVisitError, setSelfVisitError] = useState("");
 
-  const canApprove = ["Administrator","Receptionist"].includes(user.role);
-  const canCheckIn = ["Administrator","Security Guard"].includes(user.role);
-  const isEmployee = user.role === "Employee";
+  const isEmployee  = user.role === "Employee";
+  const isReception = user.role === "Receptionist";
+  // Only the host Employee or an Administrator may APPROVE (backend enforces
+  // the same rule). Receptionists may reject or re-route, never approve.
+  const canApprove  = ["Administrator"].includes(user.role) || isEmployee;
+  const canReject   = canApprove || isReception;
+  const canCheckIn  = ["Administrator","Security Guard"].includes(user.role);
   const filtered   = requests.filter(r =>
     filterStatus === "All" || r.approval_status === filterStatus || r.status === filterStatus
   );
@@ -1199,11 +1216,29 @@ function VisitRequestsPage({ requests, setRequests, user, apiMode = false, refre
     getRestrictedAreas().then(r => setAreas(r.data)).catch(() => setAreas([]));
   }, [approveTarget, apiMode]);
 
+  // Load the employee dropdown when the assign dialog opens
+  useEffect(() => {
+    if (!assignTarget) return;
+    setAssignEmployee(assignTarget.host_staff_id || "");
+    getEmployees().then(r => setEmployees(r.data)).catch(() => setEmployees([]));
+  }, [assignTarget]);
+
   async function openApprove(r) {
     setApproveTarget(r);
     setGrantRestricted(false);
     setSelectedArea("");
     setApproveError("");
+  }
+
+  async function openReject(r) {
+    setRejectTarget(r);
+    setRejectReason("");
+    setRejectError("");
+  }
+
+  async function openAssign(r) {
+    setAssignTarget(r);
+    setAssignError("");
   }
 
   async function doApprove() {
@@ -1220,9 +1255,28 @@ function VisitRequestsPage({ requests, setRequests, user, apiMode = false, refre
     } finally { setApproving(false); }
   }
 
-  async function reject(id) {
-    try { await approveRequest(id, { action: "Rejected", rejection_reason: "Rejected by staff" }); await refreshRequests(); }
-    catch (e) { console.error("Failed to reject request", e); alert("Failed to reject. See console."); }
+  async function doReject() {
+    if (!rejectReason.trim()) { setRejectError("Please type a reason for the rejection."); return; }
+    setRejecting(true); setRejectError("");
+    try {
+      await approveRequest(rejectTarget.id, { action: "Rejected", rejection_reason: rejectReason.trim() });
+      await refreshRequests();
+      setRejectTarget(null);
+    } catch(e) {
+      setRejectError(e?.response?.data?.detail || "Failed to reject. Try again.");
+    } finally { setRejecting(false); }
+  }
+
+  async function doAssign() {
+    if (!assignEmployee) { setAssignError("Choose the correct employee to send this request to."); return; }
+    setAssigning(true); setAssignError("");
+    try {
+      await assignRequest(assignTarget.id, { host_staff_id: assignEmployee });
+      await refreshRequests();
+      setAssignTarget(null);
+    } catch(e) {
+      setAssignError(e?.response?.data?.detail || "Failed to send request. Try again.");
+    } finally { setAssigning(false); }
   }
 
   async function checkOut(id) {
@@ -1281,7 +1335,7 @@ function VisitRequestsPage({ requests, setRequests, user, apiMode = false, refre
               <th className="px-4 py-3">Purpose</th>
               <th className="px-4 py-3">Approval</th>
               <th className="px-4 py-3">Status</th>
-              {(canApprove || canCheckIn) && <th className="px-4 py-3">Actions</th>}
+              {(canApprove || canReject || canCheckIn) && <th className="px-4 py-3">Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -1291,18 +1345,29 @@ function VisitRequestsPage({ requests, setRequests, user, apiMode = false, refre
             {filtered.map(r => (
               <tr key={r.id} className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
                 <td className="px-4 py-3 font-medium text-gray-900">{r.visitor_name}</td>
-                <td className="px-4 py-3 text-gray-500 text-xs">{r.host || r.host_name}</td>
+                <td className="px-4 py-3 text-gray-500 text-xs">
+                  {r.host_name}
+                  {!r.host_staff_id && (
+                    <span className="ml-1 text-[10px] font-semibold text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded-full">Unassigned</span>
+                  )}
+                </td>
                 <td className="px-4 py-3 text-gray-500 text-xs whitespace-nowrap">{r.visit_date} · {r.expected_time}</td>
                 <td className="px-4 py-3 text-gray-500 max-w-[120px] truncate text-xs">{r.purpose}</td>
                 <td className="px-4 py-3"><Badge status={r.approval_status} /></td>
                 <td className="px-4 py-3"><Badge status={r.status} /></td>
-                {(canApprove || canCheckIn) && (
+                {(canApprove || canReject || canCheckIn) && (
                   <td className="px-4 py-3">
                     <div className="flex gap-1.5">
                       {canApprove && r.approval_status === "Pending" && (
                         <>
                           <Btn size="sm" variant="success" onClick={() => openApprove(r)}>Approve</Btn>
-                          <Btn size="sm" variant="danger"  onClick={() => reject(r.id)}>Reject</Btn>
+                          <Btn size="sm" variant="danger"  onClick={() => openReject(r)}>Reject</Btn>
+                        </>
+                      )}
+                      {isReception && r.approval_status === "Pending" && (
+                        <>
+                          <Btn size="sm" variant="outline" onClick={() => openAssign(r)}>Send</Btn>
+                          <Btn size="sm" variant="danger"  onClick={() => openReject(r)}>Reject</Btn>
                         </>
                       )}
                       {canCheckIn && r.approval_status === "Approved" && r.status === "Pending Arrival" && (
@@ -1373,6 +1438,61 @@ function VisitRequestsPage({ requests, setRequests, user, apiMode = false, refre
             )}
 
             {approveError && <p className="text-xs text-red-500">{approveError}</p>}
+          </div>
+        )}
+      </Dialog>
+
+      {/* Reject dialog — reason is required */}
+      <Dialog open={!!rejectTarget} title="Reject Visit Request" onClose={() => setRejectTarget(null)}
+        footer={<>
+          <Btn variant="ghost" onClick={() => setRejectTarget(null)}>Cancel</Btn>
+          <Btn variant="danger" onClick={doReject} disabled={rejecting || !rejectReason.trim()}>
+            {rejecting ? "Rejecting…" : "Reject Request"}
+          </Btn>
+        </>}>
+        {rejectTarget && (
+          <div className="flex flex-col gap-3">
+            <div className="bg-red-50 rounded-lg p-3">
+              <p className="text-sm font-semibold text-gray-900">{rejectTarget.visitor_name}</p>
+              <p className="text-xs text-gray-500">{rejectTarget.purpose} · {rejectTarget.visit_date}</p>
+            </div>
+            <Input label="Reason for rejection *"
+              value={rejectReason}
+              onChange={e => setRejectReason(e.target.value)}
+              placeholder="e.g. Invalid ID, typo in name, no-show policy…" required />
+            <p className="text-[11px] text-gray-400 -mt-2">This reason is sent to the visitor via email.</p>
+            {rejectError && <p className="text-xs text-red-500">{rejectError}</p>}
+          </div>
+        )}
+      </Dialog>
+
+      {/* Assign / Send dialog — receptionist routes a mis-typed host to the right employee */}
+      <Dialog open={!!assignTarget} title="Send Request to Employee" onClose={() => setAssignTarget(null)}
+        footer={<>
+          <Btn variant="ghost" onClick={() => setAssignTarget(null)}>Cancel</Btn>
+          <Btn onClick={doAssign} disabled={assigning || !assignEmployee}>Send Request</Btn>
+        </>}>
+        {assignTarget && (
+          <div className="flex flex-col gap-3">
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
+              ⚠️ This request has no valid host ({assignTarget.host_name || "no name"}). Pick the correct employee to send it to — they will then approve or reject it.
+            </div>
+            <label className="block text-xs font-semibold text-gray-600">
+              Employee
+              <select value={assignEmployee} onChange={e => setAssignEmployee(e.target.value)}
+                className="mt-1 w-full h-9 px-3 rounded-[8px] border border-gray-200 text-sm outline-none">
+                <option value="">— Choose the employee —</option>
+                {employees.map(emp => (
+                  <option key={emp.id} value={emp.id}>
+                    {emp.name}{emp.department_name ? ` · ${emp.department_name}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {employees.length === 0 && (
+              <p className="text-[11px] text-amber-600 -mt-2">No employees loaded — refresh and try again.</p>
+            )}
+            {assignError && <p className="text-xs text-red-500">{assignError}</p>}
           </div>
         )}
       </Dialog>
@@ -4243,24 +4363,69 @@ function ReceptionistDashboard({ requests, visitors, user, apiMode }) {
     .sort((a, b) => a.visit_date.localeCompare(b.visit_date));
 
   const [approving, setApproving] = useState(null);
-  const [rejecting, setRejecting] = useState(null);
+  const [rejectTarget, setRejectTarget] = useState(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejecting, setRejecting]       = useState(null);
+  const [rejectError, setRejectError]   = useState("");
+
+  // Assign (send to correct employee) — receptionist only
+  const [assignTarget, setAssignTarget]     = useState(null);
+  const [employees, setEmployees]           = useState([]);
+  const [assignEmployee, setAssignEmployee] = useState("");
+  const [assigning, setAssigning]           = useState(false);
+  const [assignError, setAssignError]       = useState("");
+
+  // Employees can approve (their own) — receptionists can only re-route or reject.
+  const isReceptionSide = user.role === "Receptionist";
+
+  useEffect(() => {
+    if (!assignTarget) return;
+    setAssignEmployee(assignTarget.host_staff_id || "");
+    getEmployees().then(r => setEmployees(r.data)).catch(() => setEmployees([]));
+  }, [assignTarget]);
+
+  async function openReject(req) {
+    setRejectTarget(req);
+    setRejectReason("");
+    setRejectError("");
+  }
+
+  async function openAssign(req) {
+    setAssignTarget(req);
+    setAssignError("");
+  }
 
   async function handleApprove(req) {
     setApproving(req.id);
     try {
-      await approveRequest(req.id);
+      await approveRequest(req.id, { action: "Approved" });
       if (typeof refreshRequests === "function") refreshRequests();
     } catch {}
     setApproving(null);
   }
 
-  async function handleReject(req) {
-    setRejecting(req.id);
+  async function doReject() {
+    if (!rejectReason.trim()) { setRejectError("Please type a reason for the rejection."); return; }
+    setRejecting(rejectTarget.id); setRejectError("");
     try {
-      await updateRequestStatus(req.id, "Rejected");
+      await approveRequest(rejectTarget.id, { action: "Rejected", rejection_reason: rejectReason.trim() });
       if (typeof refreshRequests === "function") refreshRequests();
-    } catch {}
-    setRejecting(null);
+      setRejectTarget(null);
+    } catch (e) {
+      setRejectError(e?.response?.data?.detail || "Failed to reject. Try again.");
+    } finally { setRejecting(null); }
+  }
+
+  async function doAssign() {
+    if (!assignEmployee) { setAssignError("Choose the correct employee to send this request to."); return; }
+    setAssigning(true); setAssignError("");
+    try {
+      await assignRequest(assignTarget.id, { host_staff_id: assignEmployee });
+      if (typeof refreshRequests === "function") refreshRequests();
+      setAssignTarget(null);
+    } catch (e) {
+      setAssignError(e?.response?.data?.detail || "Failed to send request. Try again.");
+    } finally { setAssigning(false); }
   }
 
   const greetHour = new Date().getHours();
@@ -4303,20 +4468,33 @@ function ReceptionistDashboard({ requests, visitors, user, apiMode }) {
                   <p className="text-xs text-gray-500">
                     Host: {req.host_name} · {req.purpose} · {req.visit_date}
                     {req.expected_time && ` · ${req.expected_time}`}
+                    {!req.host_staff_id && (
+                      <span className="ml-1 text-[10px] font-semibold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-full">Unassigned</span>
+                    )}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
+                  {!isReceptionSide && (
+                    <button
+                      onClick={() => handleApprove(req)}
+                      disabled={approving === req.id}
+                      className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-semibold hover:bg-green-700 disabled:opacity-50 transition-colors">
+                      {approving === req.id ? "..." : "✓ Approve"}
+                    </button>
+                  )}
+                  {isReceptionSide && (
+                    <button
+                      onClick={() => openAssign(req)}
+                      disabled={assigning}
+                      className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-semibold hover:bg-blue-700 disabled:opacity-50 transition-colors">
+                      {assigning ? "..." : "↗ Send"}
+                    </button>
+                  )}
                   <button
-                    onClick={() => handleApprove(req)}
-                    disabled={approving === req.id}
-                    className="px-3 py-1.5 bg-green-600 text-white rounded-lg text-xs font-semibold hover:bg-green-700 disabled:opacity-50 transition-colors">
-                    {approving === req.id ? "..." : "✓ Approve"}
-                  </button>
-                  <button
-                    onClick={() => handleReject(req)}
+                    onClick={() => openReject(req)}
                     disabled={rejecting === req.id}
                     className="px-3 py-1.5 bg-white text-gray-600 border border-gray-200 rounded-lg text-xs font-semibold hover:bg-gray-50 disabled:opacity-50 transition-colors">
-                    {rejecting === req.id ? "..." : "✕"}
+                    {rejecting === req.id ? "..." : "✕ Reject"}
                   </button>
                 </div>
               </div>
@@ -4430,6 +4608,57 @@ function ReceptionistDashboard({ requests, visitors, user, apiMode }) {
           </div>
         </div>
       )}
+
+      {/* Reject dialog — reason required */}
+      <Dialog open={!!rejectTarget} title="Reject Visit Request" onClose={() => setRejectTarget(null)}
+        footer={<>
+          <Btn variant="ghost" onClick={() => setRejectTarget(null)}>Cancel</Btn>
+          <Btn variant="danger" onClick={doReject} disabled={!!rejecting || !rejectReason.trim()}>
+            {rejecting ? "Rejecting…" : "Reject Request"}
+          </Btn>
+        </>}>
+        {rejectTarget && (
+          <div className="flex flex-col gap-3">
+            <div className="bg-red-50 rounded-lg p-3">
+              <p className="text-sm font-semibold text-gray-900">{rejectTarget.visitor_name}</p>
+              <p className="text-xs text-gray-500">{rejectTarget.purpose} · {rejectTarget.visit_date}</p>
+            </div>
+            <Input label="Reason for rejection *"
+              value={rejectReason}
+              onChange={e => setRejectReason(e.target.value)}
+              placeholder="e.g. Typo in name, invalid ID…" required />
+            {rejectError && <p className="text-xs text-red-500">{rejectError}</p>}
+          </div>
+        )}
+      </Dialog>
+
+      {/* Assign / Send dialog — receptionist routes a mis-typed host */}
+      <Dialog open={!!assignTarget} title="Send Request to Employee" onClose={() => setAssignTarget(null)}
+        footer={<>
+          <Btn variant="ghost" onClick={() => setAssignTarget(null)}>Cancel</Btn>
+          <Btn onClick={doAssign} disabled={assigning || !assignEmployee}>Send Request</Btn>
+        </>}>
+        {assignTarget && (
+          <div className="flex flex-col gap-3">
+            <div className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-xs text-amber-800">
+              ⚠️ This request has no valid host ({assignTarget.host_name || "no name"}). Pick the correct employee to send it to — they will then approve or reject it.
+            </div>
+            <label className="block text-xs font-semibold text-gray-600">
+              Employee
+              <select value={assignEmployee} onChange={e => setAssignEmployee(e.target.value)}
+                className="mt-1 w-full h-9 px-3 rounded-[8px] border border-gray-200 text-sm outline-none">
+                <option value="">— Choose the employee —</option>
+                {employees.map(emp => (
+                  <option key={emp.id} value={emp.id}>
+                    {emp.name}{emp.department_name ? ` · ${emp.department_name}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {assignError && <p className="text-xs text-red-500">{assignError}</p>}
+          </div>
+        )}
+      </Dialog>
 
       {/* Quick Actions */}
       <div className="grid grid-cols-2 gap-4">
