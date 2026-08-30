@@ -1401,7 +1401,7 @@ function VisitRequestsPage({ requests, setRequests, user, apiMode = false, refre
             </div>
 
             {/* Restricted area toggle — only visible to Admin, hidden from visitor */}
-            {user.role === "Administrator" && (
+            {["Administrator","Super Admin"].includes(user.role) && (
               <div className={cls(
                 "rounded-lg border p-3 flex flex-col gap-2 transition-colors",
                 grantRestricted ? "border-red-200 bg-red-50" : "border-gray-200 bg-gray-50"
@@ -1966,7 +1966,7 @@ function Analytics({ requests, visitors, user, apiMode = false }) {
     <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-xl font-bold text-gray-900">Analytics</h1>
-        <p className="text-sm text-gray-500">{user.role === "Administrator" ? "Full-system overview" : "Your desk analytics"}</p>
+        <p className="text-sm text-gray-500">{["Administrator","Super Admin"].includes(user.role) ? "Full-system overview" : "Your desk analytics"}</p>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -2052,7 +2052,7 @@ function Analytics({ requests, visitors, user, apiMode = false }) {
         </div>
       </div>
 
-      {user.role === "Administrator" && (
+      {["Administrator","Super Admin"].includes(user.role) && (
         <div className="bg-white rounded-[12px] border border-gray-200 p-4">
           <h3 className="font-semibold text-gray-900 text-sm mb-3">Request status breakdown</h3>
           <div className="flex gap-4">
@@ -2197,8 +2197,8 @@ function RestrictedAreas({ requests, user, apiMode = false }) {
   // Search
   const [q, setQ] = useState("");
 
-  const isAdmin = user.role === "Administrator";
-  const isAdminOrRecep = ["Administrator","Receptionist"].includes(user.role);
+  const isAdmin = ["Administrator","Super Admin"].includes(user.role);
+  const isAdminOrRecep = ["Administrator","Super Admin","Receptionist"].includes(user.role);
   const isGuard = user.role === "Security Guard";
 
   function loadAreas() {
@@ -2997,7 +2997,7 @@ function _uid() { return "fp_" + Math.random().toString(36).slice(2, 10); }
 function _snap(v, g, on) { return on ? Math.round(v / g) * g : v; }
 
 function FloorPlanEditor({ apiMode = false, user }) {
-  const isAdmin = user.role === "Administrator";
+  const isAdmin = ["Administrator","Super Admin"].includes(user.role);
   const svgRef = useRef(null);
   const containerRef = useRef(null);
 
