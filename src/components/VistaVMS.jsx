@@ -2705,7 +2705,7 @@ function StaffManagement({ apiMode = false }) {
                       ) : (
                         <option value="">Unassigned</option>
                       )}
-                      {posts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+{posts.map(p => <option key={p.id} value={p.id}>{roomLabel(p)}</option>)}
                     </select>
                   </td>
                   <td className="px-4 py-3">
@@ -2771,7 +2771,7 @@ function StaffManagement({ apiMode = false }) {
             className={cls("mt-1 w-full h-9 px-3 rounded-[8px] border text-sm outline-none",
               form.role === "Security Guard" && !form.post_id ? "border-red-300 bg-red-50" : "border-gray-200")}>
             <option value="">{form.role === "Security Guard" ? "— Required: select a room —" : "No post (unassigned)"}</option>
-            {posts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            {posts.map(p => <option key={p.id} value={p.id}>{roomLabel(p)}</option>)}
           </select>
           {form.role === "Security Guard" && !form.post_id && (
             <span className="mt-1 block text-[11px] text-red-500">A Security Guard cannot scan without a room — required before saving.</span>
@@ -3736,8 +3736,8 @@ function FloorPlanEditor({ apiMode = false, user }) {
                             <select value={selectedObj.properties?.post_id || ""}
                               onChange={e => updateObjectProps(selectedObj.id, { post_id: e.target.value || null })}
                               className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white">
-                              <option value="">-- None --</option>
-                              {posts.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+<option value="">-- None --</option>
+                              {posts.map(p => <option key={p.id} value={p.id}>{roomLabel(p)}</option>)}
                             </select>
                           </div>
                         <Input label="Description" value={selectedObj.properties?.description || ""} onChange={e => updateObjectProps(selectedObj.id, { description: e.target.value })} placeholder="Optional notes" />
@@ -4189,7 +4189,7 @@ function RoomGuard({ apiMode, user }) {
       {/* Header */}
       <div className="flex items-start justify-between flex-wrap gap-3">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">My Room — {myPost.post_name || "Unknown"}</h1>
+          <h1 className="text-xl font-bold text-gray-900">My Room — {roomLabel({ name: myPost.post_name, room_number: myPost.post_room_number })}</h1>
           <p className="text-sm text-gray-500">Scan visitor badges to log arrivals at your post.</p>
         </div>
         <div className="flex items-center gap-3">
@@ -4350,7 +4350,7 @@ function RoomGuard({ apiMode, user }) {
 
       {/* Recent Arrivals */}
       <div className="bg-white rounded-[12px] border border-gray-200 p-5">
-        <h3 className="font-bold text-sm text-gray-900 mb-3">Recent Arrivals at {myPost.post_name}</h3>
+        <h3 className="font-bold text-sm text-gray-900 mb-3">Recent Arrivals at {roomLabel({ name: myPost.post_name, room_number: myPost.post_room_number })}</h3>
         {recentArrivals.length === 0 ? (
           <p className="text-sm text-gray-400 py-4 text-center">No arrivals yet.</p>
         ) : (
@@ -4414,6 +4414,11 @@ const BADGE_TABS = [
   { id: "history", label: "History" },
 ];
 const BADGE_LEVEL_LABEL = { "none": "Public", "restricted": "Restricted", "highly_restricted": "Highly Restricted" };
+
+function roomLabel(p) {
+  if (!p || !p.name) return "";
+  return p.room_number ? `${p.name} · ${p.room_number}` : p.name;
+}
 
 function badgeDate(iso) {
   if (!iso) return "—";
