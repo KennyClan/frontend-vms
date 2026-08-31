@@ -4081,6 +4081,10 @@ function RoomGuard({ apiMode, user }) {
   const [loading, setLoading] = useState(true);
   const [looking, setLooking] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [departureInput, setDepartureInput] = useState("");
+  const [departureResult, setDepartureResult] = useState(null);
+  const [departureError, setDepartureError] = useState("");
+  const [departing, setDeparting] = useState(false);
   const [idVerified, setIdVerified] = useState(false);
   const [photoCaptured, setPhotoCaptured] = useState(false);
   const [photoDataUrl, setPhotoDataUrl] = useState(null);
@@ -4170,9 +4174,30 @@ function RoomGuard({ apiMode, user }) {
 
   function handleDeparture(badgeNumber) {
     if (!badgeNumber || !myPost?.post_id) return;
+    setDepartureError("");
+    setDepartureResult(null);
     scanDeparture(myPost.post_id, { badge_number: badgeNumber })
-      .then(() => loadRecentArrivals(myPost.post_id))
-      .catch(e => setScanError(e?.response?.data?.detail || "Failed to check out visitor."));
+      .then(r => {
+        setDepartureResult(r.data);
+        setDepartureInput("");
+        loadRecentArrivals(myPost.post_id);
+      })
+      .catch(e => setDepartureError(e?.response?.data?.detail || "Failed to check out visitor."));
+  }
+
+  function handleDepartureScan() {
+    if (!departureInput.trim() || !myPost?.post_id || departing) return;
+    setDeparting(true);
+    setDepartureError("");
+    setDepartureResult(null);
+    scanDeparture(myPost.post_id, { badge_number: departureInput.trim() })
+      .then(r => {
+        setDepartureResult(r.data);
+        setDepartureInput("");
+        loadRecentArrivals(myPost.post_id);
+      })
+      .catch(e => setDepartureError(e?.response?.data?.detail || "Failed to check out visitor."))
+      .finally(() => setDeparting(false));
   }
 
   function startCamera() {
@@ -4386,6 +4411,39 @@ function RoomGuard({ apiMode, user }) {
             </div>
             <p className="text-xs text-green-600">{scanResult.detail}</p>
             <p className="text-[10px] text-gray-400 mt-1">Arrived at {scanResult.arrived_at ? new Date(scanResult.arrived_at).toLocaleTimeString() : ""}</p>
+          </div>
+        )}
+      </div>
+
+      {/* Scan Departure — visitor leaves after finishing their business */}
+      <div className="bg-white rounded-[12px] border border-gray-200 p-5">
+        <h3 className="font-bold text-sm text-gray-900 mb-1">2. Scan Departure</h3>
+        <p className="text-xs text-gray-500 mb-3">When the visitor is about to leave after their business, scan their badge again — this tells the system they have departed and frees the room.</p>
+        <div className="flex gap-3">
+          <input
+            type="text"
+            value={departureInput}
+            onChange={e => setDepartureInput(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleDepartureScan()}
+            placeholder="Scan / enter badge number (e.g. V-001)"
+            className="flex-1 border border-gray-200 rounded-lg px-4 py-2.5 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+          />
+          <button onClick={handleDepartureScan} disabled={departing || !departureInput.trim()}
+            className="px-6 py-2.5 bg-amber-600 text-white rounded-lg text-sm font-semibold hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+            {departing ? "Scanning..." : "🚪 Scan Departure"}
+          </button>
+        </div>
+        {departureError && (
+          <div className="mt-3 bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">{departureError}</div>
+        )}
+        {departureResult && (
+          <div className="mt-3 bg-gray-50 border border-gray-200 rounded-lg p-4">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-lg">🚪</span>
+              <span className="font-bold text-sm text-gray-800">{departureResult.visitor_name || "Visitor"} — Departed</span>
+            </div>
+            <p className="text-xs text-gray-600">{departureResult.detail}</p>
+            {departureResult.badge_number && <p className="text-[10px] text-gray-400 mt-1">Badge {departureResult.badge_number} returned</p>}
           </div>
         )}
       </div>
