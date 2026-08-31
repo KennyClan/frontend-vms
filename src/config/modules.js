@@ -94,7 +94,9 @@ export function ROLE_MODULE_GUARD(user, pageId) {
     case "visitors": case "requests": case "analytics":
       return hasModule(user, pageId) && ["Administrator", "Super Admin", "Receptionist", "Employee"].includes(role);
     case "security":
-      return hasModule(user, "security") && ["Administrator", "Super Admin", "Receptionist"].includes(role);
+      // Front Desk guards (Security Desk) scan the visitor QR and issue
+      // badges; Room Guard badge-scanning happens under "myroom" instead.
+      return hasModule(user, "security") && ["Administrator", "Super Admin", "Receptionist", "Security Guard"].includes(role);
     case "myroom":
       return hasModule(user, "myroom") && ["Security Guard", "Super Admin"].includes(role);
     case "audit":
@@ -111,7 +113,9 @@ export function ROLE_MODULE_GUARD(user, pageId) {
       return hasModule(user, "visitor-history") && ["Employee", "Super Admin"].includes(role);
     case "badges":
       // Role scoped per spec — stored permission toggles do not apply.
-      return ["Administrator", "Super Admin", "Receptionist"].includes(role);
+      // Front Desk guards get the read-only registry so they can pick the
+      // next available badge number when issuing at the Security Desk.
+      return ["Administrator", "Super Admin", "Receptionist", "Security Guard"].includes(role);
     default:
       return false;
   }

@@ -1832,7 +1832,7 @@ function SecurityDesk({ requests, setRequests, user = null, apiMode = false, ref
                 </td>
                 <td className="px-4 py-3 flex gap-1">
                   {r.status === "Pending Arrival" && <Btn size="sm" variant="success" onClick={() => openCheckIn(r)}>🔖 Check In</Btn>}
-                  {r.status === "Checked In"      && <Btn size="sm" variant="warning" onClick={() => checkOut(r.id)}>Exit</Btn>}
+                  {r.status === "Checked In" && ["Administrator","Super Admin","Receptionist"].includes(user?.role) && <Btn size="sm" variant="warning" onClick={() => checkOut(r.id)}>Exit</Btn>}
                 </td>
               </tr>
             ))}
@@ -1886,7 +1886,7 @@ function SecurityDesk({ requests, setRequests, user = null, apiMode = false, ref
                     </p>
                   </div>
                 </div>
-                {["Receptionist", "Security Guard"].includes(user?.role) && (
+                {["Receptionist"].includes(user?.role) && (
                   <button
                     onClick={() => window.__vista_set_page?.("restricted")}
                     className="text-left text-[11px] font-semibold text-red-700 bg-white border border-red-200 rounded-lg px-2.5 py-1.5 hover:bg-red-100 transition-colors">
